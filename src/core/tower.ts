@@ -5,18 +5,33 @@ import {
   FLOOR_COST_GROWTH,
   Resident,
 } from './types';
+import { generateFloorName, MAX_FLOOR_NAME_LENGTH } from './floorNames';
 
 export class Tower {
-  floors: Floor[] = [{ level: 0, type: 'lobby' }];
+  floors: Floor[] = [{ level: 0, type: 'lobby', name: 'Lobby' }];
 
   get height(): number {
     return this.floors.length;
   }
 
-  addFloor(type: Exclude<FloorType, 'lobby'>): Floor {
-    const floor: Floor = { level: this.floors.length, type };
+  addFloor(type: Exclude<FloorType, 'lobby'>, rand: () => number = Math.random): Floor {
+    const floor: Floor = {
+      level: this.floors.length,
+      type,
+      name: generateFloorName(type, rand),
+    };
     this.floors.push(floor);
     return floor;
+  }
+
+  /** Player rename; trims and rejects empty/overlong names. Lobby keeps its name. */
+  renameFloor(level: number, name: string): boolean {
+    const floor = this.floors[level];
+    if (!floor || floor.type === 'lobby') return false;
+    const trimmed = name.trim();
+    if (trimmed.length === 0 || trimmed.length > MAX_FLOOR_NAME_LENGTH) return false;
+    floor.name = trimmed;
+    return true;
   }
 
   /** Cost of the next floor of the given type, scaling with tower height. */
@@ -34,22 +49,11 @@ export class Tower {
     return this.floorsOfType('residential').length * FLOOR_CONFIG.residential.homes;
   }
 
-  /** A residential floor with a free bed, if any. */
+  /** A residential floor with a free bed, if any. Residents filtered by caller for this tower. */
   vacantHomeFloor(residents: Resident[]): Floor | null {
     for (const floor of this.floorsOfType('residential')) {
       const occupants = residents.filter((r) => r.homeFloor === floor.level).length;
       if (occupants < FLOOR_CONFIG.residential.homes) return floor;
-    }
-    return null;
-  }
-
-  /** A floor with an unfilled job slot, if any. */
-  vacantJobFloor(residents: Resident[]): Floor | null {
-    for (const floor of this.floors) {
-      if (floor.type === 'lobby' || floor.type === 'residential') continue;
-      const jobs = FLOOR_CONFIG[floor.type].jobs;
-      const workers = residents.filter((r) => r.jobFloor === floor.level).length;
-      if (workers < jobs) return floor;
     }
     return null;
   }

@@ -1,8 +1,9 @@
-import { ActivityKind, ECONOMY, MINUTES_PER_DAY, Resident } from './types';
+import { ActivityKind, ECONOMY, JOB_TIERS, MINUTES_PER_DAY } from './types';
+import { TowerContext } from './careers';
 
 /**
  * Traffic-driven economy: shops and restaurants earn per actual visit,
- * offices earn per worker-minute actually spent at work, rent accrues
+ * workers earn wages only for minutes actually spent at work, rent accrues
  * per resident-minute. No timers, no taps — income follows real movement.
  */
 export class Economy {
@@ -22,15 +23,27 @@ export class Economy {
     return income;
   }
 
-  /** Per-tick passive accrual: rent for everyone, wages for those at work right now. */
-  accrue(dt: number, residents: Resident[]): void {
+  /**
+   * Per-tick passive accrual across the whole town: rent for everyone, wages
+   * for those at work right now (scaled by their job tier's pay multiplier).
+   */
+  accrue(dt: number, contexts: TowerContext[]): void {
     const rentPerMinute = ECONOMY.rentPerResidentPerDay / MINUTES_PER_DAY;
-    const officePerMinute = ECONOMY.officeIncomePerWorkerDay / (8 * 60);
+    const byId = new Map(contexts.map((c) => [c.id, c]));
 
-    let amount = residents.length * rentPerMinute * dt;
-    for (const r of residents) {
-      if (r.state.kind === 'idle' && r.state.activity.kind === 'work') {
-        amount += officePerMinute * dt;
+    let amount = 0;
+    for (const ctx of contexts) {
+      amount += ctx.residents.length * rentPerMinute * dt;
+      for (const r of ctx.residents) {
+        if (r.state.kind !== 'idle' || r.state.activity.kind !== 'work') continue;
+        if (r.jobTowerId === null || r.jobFloor === null) continue;
+        const jobCtx = byId.get(r.jobTowerId);
+        const floor = jobCtx?.tower.floors[r.jobFloor];
+        if (!floor || floor.type === 'lobby' || floor.type === 'residential') continue;
+        const tier = JOB_TIERS[floor.type][r.jobTier];
+        if (!tier) continue;
+        const wagePerMinute = ECONOMY.baseWagePerWorkerDay[floor.type] / (8 * 60);
+        amount += wagePerMinute * tier.payMultiplier * dt;
       }
     }
     this.earn(amount);
@@ -46,12 +59,6 @@ export class Economy {
     if (this.coins < amount) return false;
     this.coins -= amount;
     return true;
-  }
-
-  nextElevatorCarCost(currentCars: number): number {
-    return Math.round(
-      ECONOMY.elevatorCarBaseCost * Math.pow(ECONOMY.elevatorCarCostGrowth, currentCars - 1),
-    );
   }
 
   newDay(): void {

@@ -97,6 +97,140 @@ body,
   color: #a04458;
 }
 
+#inspector {
+  position: absolute;
+  top: 70px;
+  right: 12px;
+  width: 240px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 4px 16px rgba(60, 50, 90, 0.22);
+  color: #4a4458;
+  display: none;
+}
+
+.insp-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: none;
+  font-size: 20px;
+  color: #8b84a0;
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.insp-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 2px;
+  padding-right: 24px;
+}
+
+#insp-rename {
+  width: calc(100% - 28px);
+  font-size: 15px;
+  font-weight: 700;
+  color: #4a4458;
+  border: none;
+  border-bottom: 2px dashed #d0c8e0;
+  background: transparent;
+  padding: 2px 0;
+  outline: none;
+}
+
+#insp-rename:focus {
+  border-bottom-color: #9a8fe0;
+}
+
+.insp-sub {
+  font-size: 11px;
+  color: #8b84a0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.insp-section {
+  font-size: 12px;
+  font-weight: 700;
+  margin: 10px 0 4px;
+  color: #6a6280;
+}
+
+.insp-row {
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.insp-empty {
+  color: #a8a0ba;
+  font-style: italic;
+}
+
+.insp-buy {
+  margin-top: 10px;
+  width: 100%;
+}
+
+/* --- small screens / touch ------------------------------------------- */
+
+@media (max-width: 640px) {
+  #hud {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    gap: 6px;
+  }
+
+  .hud-chip {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 10px;
+  }
+
+  .hud-chip small {
+    font-size: 9px;
+  }
+
+  #build-menu {
+    bottom: 8px;
+    gap: 6px;
+  }
+
+  .build-btn {
+    padding: 10px 10px;
+    font-size: 12px;
+    min-height: 44px;
+  }
+
+  #inspector {
+    top: auto;
+    bottom: 76px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: 45vh;
+  }
+
+  #toast {
+    bottom: 140px;
+  }
+}
+
+@media (pointer: coarse) {
+  .build-btn {
+    min-height: 48px;
+    min-width: 64px;
+  }
+}
+
 #toast {
   position: absolute;
   bottom: 84px;

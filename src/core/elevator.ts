@@ -44,11 +44,22 @@ export class ElevatorSystem {
   /** floor level -> riders waiting there, oldest first */
   queues = new Map<number, WaitingRider[]>();
 
+  /** Current travel speed, floors per game minute (upgradable via applyTier). */
+  speed = ELEVATOR.speed;
+  /** Current door/load time per stop, game minutes (upgradable via applyTier). */
+  doorTime = ELEVATOR.doorTime;
+
   /** Rolling average wait, game minutes. */
   private waitSamples: number[] = [];
 
   constructor(carCount = 1) {
     for (let i = 0; i < carCount; i++) this.addCar();
+  }
+
+  /** Apply a purchased speed tier (affects travel speed and door time). */
+  applyTier(tier: { speed: number; doorTime: number }): void {
+    this.speed = tier.speed;
+    this.doorTime = tier.doorTime;
   }
 
   addCar(): void {
@@ -101,13 +112,13 @@ export class ElevatorSystem {
             break;
           }
           const dir = Math.sign(car.target - car.pos);
-          car.pos += dir * ELEVATOR.speed * dt;
+          car.pos += dir * this.speed * dt;
           const arrived =
             (dir >= 0 && car.pos >= car.target) || (dir < 0 && car.pos <= car.target);
           if (arrived) {
             car.pos = car.target;
             car.state = 'loading';
-            car.doorTimer = ELEVATOR.doorTime;
+            car.doorTimer = this.doorTime;
           }
           break;
         }
@@ -175,7 +186,7 @@ export class ElevatorSystem {
     if (best.floor === Math.round(car.pos)) {
       // Already here: open doors immediately.
       car.state = 'loading';
-      car.doorTimer = ELEVATOR.doorTime;
+      car.doorTimer = this.doorTime;
       return null;
     }
     return best.floor;

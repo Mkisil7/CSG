@@ -1,50 +1,78 @@
 import {
+  ELEVATOR_TIERS,
   FLOOR_CONFIG,
   FloorType,
-  MINUTES_PER_DAY,
-  MOVE_IN_INTERVAL,
-  ELEVATOR,
   Resident,
+  SECOND_SHAFT,
+  TOWN,
 } from './types';
 import { Tower } from './tower';
 import { ElevatorSystem } from './elevator';
 import { Economy } from './economy';
-import { createResident, planNext, resetDailyFlags } from './residents';
+import { planNext } from './residents';
 
 export interface GameEvent {
-  kind: 'visit' | 'move-in';
+  kind: 'visit' | 'move-in' | 'hire' | 'promotion' | 'job-switch' | 'build';
   message: string;
 }
 
+export interface Departure {
+  residentId: string;
+  toTowerId: string;
+}
+
+/** Pick the shaft with the shorter queue at the rider's floor (ties → first). */
+export function chooseShaft(shafts: ElevatorSystem[], floor: number): ElevatorSystem {
+  let best = shafts[0];
+  let bestLen = best.queues.get(floor)?.length ?? 0;
+  for (const shaft of shafts.slice(1)) {
+    const len = shaft.queues.get(floor)?.length ?? 0;
+    if (len < bestLen) {
+      best = shaft;
+      bestLen = len;
+    }
+  }
+  return best;
+}
+
+/**
+ * One tower's simulation: floors, lift shafts, and the residents physically
+ * inside it right now. The clock and wallet are shared town-wide and injected;
+ * cross-tower concerns (hiring, move-ins, commute handoffs) live in Town.
+ */
 export class Game {
   tower = new Tower();
   elevator = new ElevatorSystem(1);
-  economy = new Economy();
+  secondElevator: ElevatorSystem | null = null;
+  elevatorTier = 0;
+
+  /** Residents currently inside this tower (home tower's array by default). */
   residents: Resident[] = [];
 
-  /** Total game minutes elapsed since the tower opened. */
-  time = 8 * 60; // day 1 starts at 08:00 so things happen right away
-  moveInTimer = 0;
+  /** Residents whose home is this tower — maintained by Town each tick. */
+  homePopulation = 0;
 
   /** Events emitted during the last tick, for UI toasts. */
   events: GameEvent[] = [];
+  /** Residents whose commute finished this tick; Town moves them between towers. */
+  readyToDepart: Departure[] = [];
 
-  get day(): number {
-    return Math.floor(this.time / MINUTES_PER_DAY) + 1;
-  }
+  /** Town time, mirrored in at each tick for internal scheduling. */
+  private time = 0;
 
-  get timeOfDay(): number {
-    return this.time % MINUTES_PER_DAY;
-  }
+  constructor(
+    public readonly id: string,
+    public economy: Economy,
+  ) {}
 
-  get population(): number {
-    return this.residents.length;
+  shafts(): ElevatorSystem[] {
+    return this.secondElevator ? [this.elevator, this.secondElevator] : [this.elevator];
   }
 
   // ---- player actions -------------------------------------------------
 
   canBuild(type: Exclude<FloorType, 'lobby'>): { ok: boolean; reason?: string } {
-    if (this.population < FLOOR_CONFIG[type].unlockPop) {
+    if (this.homePopulation < FLOOR_CONFIG[type].unlockPop) {
       return { ok: false, reason: `Needs ${FLOOR_CONFIG[type].unlockPop} residents` };
     }
     if (this.economy.coins < this.tower.nextFloorCost(type)) {
@@ -57,70 +85,108 @@ export class Game {
     if (!this.canBuild(type).ok) return false;
     this.economy.spend(this.tower.nextFloorCost(type));
     this.tower.addFloor(type);
-    this.assignJobs();
     return true;
   }
 
-  canAddCar(): { ok: boolean; reason?: string } {
-    if (this.elevator.cars.length >= ELEVATOR.maxCars) {
-      return { ok: false, reason: 'Shaft is full' };
-    }
-    if (this.economy.coins < this.economy.nextElevatorCarCost(this.elevator.cars.length)) {
-      return { ok: false, reason: 'Not enough coins' };
-    }
+  nextSpeedTierCost(): number | null {
+    const next = ELEVATOR_TIERS[this.elevatorTier + 1];
+    return next ? next.cost : null;
+  }
+
+  canUpgradeSpeed(): { ok: boolean; reason?: string } {
+    const cost = this.nextSpeedTierCost();
+    if (cost === null) return { ok: false, reason: 'Lift is already top speed' };
+    if (this.economy.coins < cost) return { ok: false, reason: 'Not enough coins' };
     return { ok: true };
   }
 
-  addElevatorCar(): boolean {
-    if (!this.canAddCar().ok) return false;
-    this.economy.spend(this.economy.nextElevatorCarCost(this.elevator.cars.length));
-    this.elevator.addCar();
+  upgradeSpeed(): boolean {
+    if (!this.canUpgradeSpeed().ok) return false;
+    const cost = this.nextSpeedTierCost()!;
+    this.economy.spend(cost);
+    this.elevatorTier++;
+    const tier = ELEVATOR_TIERS[this.elevatorTier];
+    for (const shaft of this.shafts()) shaft.applyTier(tier);
     return true;
+  }
+
+  canUnlockSecondShaft(): { ok: boolean; reason?: string } {
+    if (this.secondElevator) return { ok: false, reason: 'Already built' };
+    if (this.homePopulation < SECOND_SHAFT.unlockPop) {
+      return { ok: false, reason: `Needs ${SECOND_SHAFT.unlockPop} residents` };
+    }
+    if (this.economy.coins < SECOND_SHAFT.cost) return { ok: false, reason: 'Not enough coins' };
+    return { ok: true };
+  }
+
+  unlockSecondShaft(): boolean {
+    if (!this.canUnlockSecondShaft().ok) return false;
+    this.economy.spend(SECOND_SHAFT.cost);
+    this.secondElevator = new ElevatorSystem(1);
+    this.secondElevator.applyTier(ELEVATOR_TIERS[this.elevatorTier]);
+    return true;
+  }
+
+  /** Average wait across shafts, weighted equally. */
+  averageWait(): number {
+    const shafts = this.shafts();
+    return shafts.reduce((sum, s) => sum + s.averageWait(), 0) / shafts.length;
   }
 
   // ---- simulation -----------------------------------------------------
 
-  tick(dt: number): void {
+  tick(dt: number, now: number): void {
+    this.time = now;
     this.events = [];
-    const prevDay = this.day;
-    this.time += dt;
+    this.readyToDepart = [];
 
-    if (this.day !== prevDay) {
-      resetDailyFlags(this.residents);
-      this.economy.newDay();
-    }
-
-    this.handleMoveIns(dt);
-
-    // The elevator moves people; boarding/arrival events drive resident state.
-    const { arrivals, boardings } = this.elevator.tick(dt, this.time);
-    for (const { residentId } of boardings) {
-      const resident = this.residents.find((r) => r.id === residentId);
-      if (resident && resident.state.kind === 'waiting') {
-        resident.state = { kind: 'riding', to: resident.state.to };
+    // Lifts move people; boarding/arrival events drive resident state.
+    for (const shaft of this.shafts()) {
+      const { arrivals, boardings } = shaft.tick(dt, now);
+      for (const { residentId } of boardings) {
+        const resident = this.residents.find((r) => r.id === residentId);
+        if (resident && resident.state.kind === 'waiting') {
+          resident.state = { kind: 'riding', to: resident.state.to };
+        }
+      }
+      for (const { residentId, floor } of arrivals) {
+        const resident = this.residents.find((r) => r.id === residentId);
+        if (resident) this.arrive(resident, floor);
       }
     }
-    for (const { residentId, floor } of arrivals) {
-      const resident = this.residents.find((r) => r.id === residentId);
-      if (resident) this.arrive(resident, floor);
-    }
 
-    // Residents whose current activity ended decide what to do next.
     for (const resident of this.residents) {
-      if (resident.state.kind === 'idle' && this.time >= resident.state.until) {
+      if (resident.state.kind === 'idle' && now >= resident.state.until) {
         this.startNextActivity(resident);
+      } else if (resident.state.kind === 'commuting' && now >= resident.state.until) {
+        this.readyToDepart.push({
+          residentId: resident.id,
+          toTowerId: resident.state.toTowerId,
+        });
       }
     }
-
-    this.economy.accrue(dt, this.residents);
   }
 
   private startNextActivity(resident: Resident): void {
     if (resident.state.kind !== 'idle') return;
     const currentFloor = resident.state.floor;
-    const { activity, duration } = planNext(resident, this.timeOfDay, this.tower);
+    const crossTowerJob = resident.jobTowerId !== null && resident.jobTowerId !== this.id;
+    const crossTowerHome = resident.homeTowerId !== this.id;
+    const { activity, duration } = planNext(
+      resident,
+      this.time % (24 * 60),
+      this.tower,
+      Math.random,
+      crossTowerJob,
+      crossTowerHome,
+    );
 
-    if (activity.floor === currentFloor) {
+    if (activity.kind === 'commute' && currentFloor === 0) {
+      this.beginCommute(resident);
+      return;
+    }
+
+    if (activity.floor === currentFloor && activity.kind !== 'commute') {
       resident.state = { kind: 'idle', floor: currentFloor, activity, until: this.time + duration };
       this.onActivityStart(resident);
       return;
@@ -128,12 +194,33 @@ export class Game {
 
     resident.state = { kind: 'waiting', floor: currentFloor, to: activity.floor };
     resident.pendingActivity = { activity, duration };
-    this.elevator.request(resident.id, currentFloor, activity.floor, this.time);
+    chooseShaft(this.shafts(), currentFloor).request(
+      resident.id,
+      currentFloor,
+      activity.floor,
+      this.time,
+    );
+  }
+
+  private beginCommute(resident: Resident): void {
+    // Standing in home tower → head to job tower; otherwise head home.
+    const toTowerId =
+      resident.homeTowerId === this.id ? resident.jobTowerId! : resident.homeTowerId;
+    resident.pendingActivity = undefined;
+    resident.state = {
+      kind: 'commuting',
+      toTowerId,
+      until: this.time + TOWN.commuteMinutes,
+    };
   }
 
   private arrive(resident: Resident, floor: number): void {
     const pending = resident.pendingActivity;
     resident.pendingActivity = undefined;
+    if (pending && pending.activity.kind === 'commute' && floor === 0) {
+      this.beginCommute(resident);
+      return;
+    }
     if (pending && pending.activity.floor === floor) {
       resident.state = {
         kind: 'idle',
@@ -162,31 +249,6 @@ export class Game {
         kind: 'visit',
         message: `${resident.name} spent ${income} coins ${kind === 'eat' ? 'eating' : 'shopping'}`,
       });
-    }
-  }
-
-  private handleMoveIns(dt: number): void {
-    this.moveInTimer += dt;
-    if (this.moveInTimer < MOVE_IN_INTERVAL) return;
-    this.moveInTimer = 0;
-
-    const vacancy = this.tower.vacantHomeFloor(this.residents);
-    if (!vacancy) return;
-
-    const resident = createResident(vacancy.level);
-    if (resident.state.kind === 'idle') resident.state.until = this.time;
-    this.residents.push(resident);
-    this.assignJobs();
-    this.events.push({ kind: 'move-in', message: `${resident.name} moved in!` });
-  }
-
-  /** Fill open job slots with unemployed residents. */
-  private assignJobs(): void {
-    for (const resident of this.residents) {
-      if (resident.jobFloor !== null) continue;
-      const job = this.tower.vacantJobFloor(this.residents);
-      if (!job) return;
-      resident.jobFloor = job.level;
     }
   }
 }

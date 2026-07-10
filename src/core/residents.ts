@@ -17,17 +17,22 @@ export function bumpIdCounter(pastId: number): void {
   nextId = Math.max(nextId, pastId + 1);
 }
 
-export function peekIdCounter(): number {
-  return nextId;
-}
-
-export function createResident(homeFloor: number, rand: () => number = Math.random): Resident {
+export function createResident(
+  homeFloor: number,
+  homeTowerId: string,
+  rand: () => number = Math.random,
+): Resident {
   const workStart = 480 + Math.floor(rand() * 120); // 8:00–10:00
   return {
     id: `r${nextId++}`,
     name: FIRST_NAMES[Math.floor(rand() * FIRST_NAMES.length)],
     homeFloor,
+    homeTowerId,
     jobFloor: null,
+    jobTowerId: null,
+    jobTier: 0,
+    jobStartDay: null,
+    blockedDays: 0,
     workStart,
     workEnd: workStart + 480,
     didLunch: false,
@@ -40,35 +45,44 @@ export function createResident(homeFloor: number, rand: () => number = Math.rand
 
 export interface PlannedActivity {
   activity: Activity;
-  /** Game minutes the activity lasts; Infinity means "until the schedule says otherwise". */
   duration: number;
 }
 
 /**
  * Decide what a resident does next, given the time of day. This is the whole
- * "brain": home -> work -> lunch -> work -> maybe shop -> home.
+ * "brain": home -> work -> lunch -> work -> maybe shop -> home. When home or
+ * job is in another tower, the plan routes to the lobby as a 'commute'
+ * activity instead; the Game turns that into a street-level commute.
  */
 export function planNext(
   resident: Resident,
   timeOfDay: number,
   tower: Tower,
   rand: () => number = Math.random,
+  crossTowerJob = false,
+  crossTowerHome = false,
 ): PlannedActivity {
-  const home: Activity = { kind: 'home', floor: resident.homeFloor };
+  const home: Activity = crossTowerHome
+    ? { kind: 'commute', floor: 0 }
+    : { kind: 'home', floor: resident.homeFloor };
 
   if (resident.jobFloor !== null) {
-    const work: Activity = { kind: 'work', floor: resident.jobFloor };
+    const work: Activity = crossTowerJob
+      ? { kind: 'commute', floor: 0 }
+      : { kind: 'work', floor: resident.jobFloor };
     const lunchTime = resident.workStart + 240;
 
     if (timeOfDay < resident.workStart) {
       return { activity: home, duration: resident.workStart - timeOfDay };
     }
     if (timeOfDay < resident.workEnd) {
-      if (timeOfDay >= lunchTime && !resident.didLunch) {
+      // Lunch/shopping happen in whatever tower they're currently standing in.
+      if (timeOfDay >= lunchTime && !resident.didLunch && !crossTowerJob) {
         resident.didLunch = true;
         const spot = tower.randomFloorOfType('restaurant', rand);
         if (spot) return { activity: { kind: 'eat', floor: spot.level }, duration: 40 };
       }
+      if (crossTowerJob) return { activity: work, duration: 1 };
       const until = !resident.didLunch ? Math.min(lunchTime, resident.workEnd) : resident.workEnd;
       return { activity: work, duration: Math.max(1, until - timeOfDay) };
     }

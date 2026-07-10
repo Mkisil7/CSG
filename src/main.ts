@@ -1,59 +1,210 @@
 import { GAME_MINUTES_PER_SECOND } from './core/types';
+import { Town } from './core/town';
 import { Game } from './core/game';
 import { loadGame, saveGame, clearSave } from './core/save';
-import { createScene, trackTowerHeight, updateDaylight } from './render/scene';
+import {
+  createScene,
+  focusTower,
+  focusTown,
+  trackTowerHeight,
+  updateDaylight,
+} from './render/scene';
 import { FloorViews } from './render/floors';
-import { CharacterViews } from './render/characters';
+import { CharacterViews, ShaftRef } from './render/characters';
 import { ElevatorViews } from './render/elevatorView';
+import { PlotViews } from './render/plots';
+import { preloadAssets } from './render/assets';
+import {
+  SHAFT_X,
+  SHAFT_X_RIGHT,
+  TOWER_SLOT_ORIGINS,
+  WAIT_X,
+  WAIT_X_RIGHT,
+} from './render/layout';
+import { PickingController } from './input/picking';
 import { Hud, Toaster } from './ui/hud';
 import { BuildMenu } from './ui/buildMenu';
+import { Inspector } from './ui/inspector';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = createScene(canvas);
+void preloadAssets();
 
-let game = loadGame() ?? new Game();
+const town: Town = loadGame() ?? new Town();
 
-const floorViews = new FloorViews(ctx.scene);
-const characterViews = new CharacterViews(ctx.scene);
-const elevatorViews = new ElevatorViews(ctx.scene);
+interface TowerViewBundle {
+  slotIndex: number;
+  game: Game;
+  floors: FloorViews;
+  characters: CharacterViews;
+  liftLeft: ElevatorViews;
+  liftRight: ElevatorViews | null;
+}
+
+const bundles = new Map<string, TowerViewBundle>();
+const plots = new PlotViews(ctx.scene);
+
+function ensureBundles(): void {
+  town.slots.forEach((slot, slotIndex) => {
+    if (!slot.unlocked || !slot.game || bundles.has(slot.id)) return;
+    const origin = TOWER_SLOT_ORIGINS[slotIndex];
+    bundles.set(slot.id, {
+      slotIndex,
+      game: slot.game,
+      floors: new FloorViews(ctx.scene, slot.id, origin),
+      characters: new CharacterViews(ctx.scene, slot.id, origin),
+      liftLeft: new ElevatorViews(ctx.scene, SHAFT_X, origin),
+      liftRight: null,
+    });
+  });
+}
+ensureBundles();
+
+// ---- camera focus state ---------------------------------------------------
+
+let focusedSlot: number | null = 0; // start zoomed into the first tower
+function focusedGame(): Game | null {
+  if (focusedSlot === null) return null;
+  return town.slots[focusedSlot]?.game ?? null;
+}
+
+function setFocus(slotIndex: number | null): void {
+  focusedSlot = slotIndex;
+  if (slotIndex === null) {
+    const unlocked = town.slots.flatMap((s, i) => (s.unlocked ? [i] : []));
+    focusTown(ctx, unlocked);
+  } else {
+    const game = town.slots[slotIndex]?.game;
+    focusTower(ctx, slotIndex, game ? game.tower.floors.length : 1);
+  }
+}
+
+// ---- UI ---------------------------------------------------------------------
 
 const hud = new Hud(document.getElementById('hud')!);
 const toaster = new Toaster(document.getElementById('toast')!);
+
+const onChanged = () => {
+  ensureBundles();
+  saveGame(town);
+};
+
+const inspector = new Inspector(
+  document.getElementById('inspector')!,
+  () => town,
+  () => {
+    onChanged();
+    // Focus a freshly bought tower so the player lands inside it.
+    const newest = town.towers()[town.towers().length - 1];
+    const idx = town.slots.findIndex((s) => s.id === newest.id);
+    if (focusedSlot === null && idx >= 0) setFocus(idx);
+  },
+);
+
 const buildMenu = new BuildMenu(
   document.getElementById('build-menu')!,
-  game,
+  focusedGame,
   toaster,
-  () => saveGame(game),
+  onChanged,
+  () => setFocus(focusedSlot === null ? 0 : null),
   () => {
     clearSave();
     location.reload();
   },
 );
 
+new PickingController(
+  canvas,
+  ctx.camera,
+  () => [
+    ...[...bundles.values()].flatMap((b) => [...b.floors.pickTargets(), ...b.characters.pickTargets()]),
+    ...plots.pickTargets(),
+  ],
+  (result) => {
+    if (!result) {
+      inspector.select(null);
+      return;
+    }
+    if (result.kind === 'resident') {
+      inspector.select({ kind: 'resident', residentId: result.residentId });
+      return;
+    }
+    if (result.kind === 'floor') {
+      const slotIndex = town.slots.findIndex((s) => s.id === result.towerId);
+      if (focusedSlot === slotIndex) {
+        inspector.select({ kind: 'floor', towerId: result.towerId, level: result.floorLevel });
+      } else {
+        setFocus(slotIndex); // clicking a distant tower zooms into it
+      }
+      return;
+    }
+    // Ground pads: locked → purchase panel; unlocked → focus that tower.
+    const slot = town.slots[result.slotIndex];
+    if (slot?.unlocked) {
+      setFocus(result.slotIndex);
+      inspector.select(null);
+    } else {
+      inspector.select({ kind: 'slot', index: result.slotIndex });
+    }
+  },
+);
+
+// ---- main loop ----------------------------------------------------------------
+
 let last = performance.now();
 let saveTimer = 0;
+let inspectorTimer = 0;
 
 function frame(now: number): void {
   const realDt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
-  const gameDt = realDt * GAME_MINUTES_PER_SECOND;
-  game.tick(gameDt);
-  for (const event of game.events) toaster.show(event.message);
+  town.tick(realDt * GAME_MINUTES_PER_SECOND);
+  for (const event of town.events) toaster.show(event.message);
 
-  floorViews.sync(game.tower.floors);
-  characterViews.sync(game.residents, game.elevator, realDt);
-  elevatorViews.sync(game.elevator);
-  updateDaylight(ctx, game.timeOfDay);
-  trackTowerHeight(ctx, game.tower.floors.length);
+  ensureBundles();
+  for (const bundle of bundles.values()) {
+    const game = bundle.game;
+    bundle.floors.setSecondShaft(!!game.secondElevator);
+    bundle.floors.sync(game.tower.floors);
 
-  hud.update(game);
-  buildMenu.update();
+    if (game.secondElevator && !bundle.liftRight) {
+      bundle.liftRight = new ElevatorViews(
+        ctx.scene,
+        SHAFT_X_RIGHT,
+        TOWER_SLOT_ORIGINS[bundle.slotIndex],
+      );
+    }
+    bundle.liftLeft.sync(game.elevator);
+    if (bundle.liftRight && game.secondElevator) bundle.liftRight.sync(game.secondElevator);
+
+    const shafts: ShaftRef[] = [{ system: game.elevator, shaftX: SHAFT_X, waitX: WAIT_X }];
+    if (game.secondElevator) {
+      shafts.push({ system: game.secondElevator, shaftX: SHAFT_X_RIGHT, waitX: WAIT_X_RIGHT });
+    }
+    bundle.characters.sync(game.residents, shafts, realDt);
+  }
+  plots.sync(town);
+
+  updateDaylight(ctx, town.timeOfDay);
+  if (focusedSlot !== null) {
+    const game = town.slots[focusedSlot]?.game;
+    if (game) trackTowerHeight(ctx, focusedSlot, game.tower.floors.length);
+  }
+
+  hud.update(town, focusedGame());
+  buildMenu.update(focusedSlot !== null);
+
+  inspectorTimer += realDt;
+  if (inspectorTimer > 0.25) {
+    inspectorTimer = 0;
+    inspector.refresh();
+  }
 
   saveTimer += realDt;
   if (saveTimer > 15) {
     saveTimer = 0;
-    saveGame(game);
+    saveGame(town);
   }
 
   ctx.controls.update();
@@ -61,6 +212,10 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 
+setFocus(0);
 requestAnimationFrame(frame);
 
-window.addEventListener('beforeunload', () => saveGame(game));
+window.addEventListener('beforeunload', () => saveGame(town));
+
+// Debug/testing hook (harmless in production; state is local-only anyway).
+(window as unknown as { __town: Town }).__town = town;

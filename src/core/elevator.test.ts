@@ -85,4 +85,16 @@ describe('ElevatorSystem', () => {
     runUntil(elevator, (a) => a.length >= 1);
     expect(elevator.averageWait()).toBeGreaterThan(0);
   });
+
+  it('a speed-tier upgrade delivers riders faster', () => {
+    const slow = new ElevatorSystem(1);
+    const fast = new ElevatorSystem(1);
+    fast.applyTier({ speed: ELEVATOR.speed * 3, doorTime: ELEVATOR.doorTime / 2 });
+    slow.request('a', 0, 8, 0);
+    fast.request('a', 0, 8, 0);
+
+    const slowTime = runUntil(slow, (a) => a.length >= 1).elapsed;
+    const fastTime = runUntil(fast, (a) => a.length >= 1).elapsed;
+    expect(fastTime).toBeLessThan(slowTime);
+  });
 });
