@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ElevatorSystem } from '../core/elevator';
+import { getAsset } from './assets';
 import { FLOOR_HEIGHT, SHAFT_WIDTH, floorY } from './layout';
 
 const CAB_BODY = 0xf2b366;
@@ -22,6 +23,25 @@ export class ElevatorViews {
 
   sync(elevator: ElevatorSystem): void {
     while (this.cabs.length < elevator.cars.length) {
+      // Optional real model (public/models/, see assets.ts): children named
+      // 'Body'/'Light' get state-color feedback; otherwise it renders as-is.
+      const custom = getAsset('elevator-cab');
+      if (custom) {
+        const bodyMesh = custom.getObjectByName('Body') as THREE.Mesh | undefined;
+        const lightMesh = custom.getObjectByName('Light') as THREE.Mesh | undefined;
+        const bodyMat =
+          bodyMesh?.material instanceof THREE.MeshLambertMaterial
+            ? bodyMesh.material
+            : new THREE.MeshLambertMaterial({ color: CAB_BODY });
+        const lightMat =
+          lightMesh?.material instanceof THREE.MeshBasicMaterial
+            ? lightMesh.material
+            : new THREE.MeshBasicMaterial({ color: 0xffffff });
+        this.cabs.push({ root: custom, body: bodyMat, light: lightMat });
+        this.group.add(custom);
+        continue;
+      }
+
       const root = new THREE.Group();
       const bodyMat = new THREE.MeshLambertMaterial({ color: CAB_BODY });
       const cab = new THREE.Mesh(

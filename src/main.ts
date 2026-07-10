@@ -1,7 +1,8 @@
-import { GAME_MINUTES_PER_SECOND } from './core/types';
+import { GAME_MINUTES_PER_SECOND, OFFLINE } from './core/types';
 import { Town } from './core/town';
 import { Game } from './core/game';
 import { loadGame, saveGame, clearSave } from './core/save';
+import { offlineGameMinutes, runOfflineCatchup } from './core/offline';
 import {
   createScene,
   focusTower,
@@ -25,12 +26,23 @@ import { PickingController } from './input/picking';
 import { Hud, Toaster } from './ui/hud';
 import { BuildMenu } from './ui/buildMenu';
 import { Inspector } from './ui/inspector';
+import { SpeedControl } from './ui/speedControl';
+import { showOfflineModal } from './ui/offlineModal';
+import { MISSION_DEFS } from './core/missions';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = createScene(canvas);
 void preloadAssets();
 
-const town: Town = loadGame() ?? new Town();
+const loaded = loadGame();
+const town: Town = loaded?.town ?? new Town();
+
+// Offline catch-up: simulate the time away (capped) and report what happened.
+if (loaded && loaded.awayRealSeconds >= OFFLINE.minAwayRealSeconds) {
+  const minutes = offlineGameMinutes(loaded.awayRealSeconds);
+  const report = runOfflineCatchup(town, minutes, loaded.awayRealSeconds);
+  showOfflineModal(document.getElementById('offline-modal')!, report);
+}
 
 interface TowerViewBundle {
   slotIndex: number;
@@ -83,6 +95,7 @@ function setFocus(slotIndex: number | null): void {
 
 const hud = new Hud(document.getElementById('hud')!);
 const toaster = new Toaster(document.getElementById('toast')!);
+const speedControl = new SpeedControl(document.getElementById('speed-control')!);
 
 const onChanged = () => {
   ensureBundles();
@@ -107,6 +120,7 @@ const buildMenu = new BuildMenu(
   toaster,
   onChanged,
   () => setFocus(focusedSlot === null ? 0 : null),
+  () => inspector.select({ kind: 'missions' }),
   () => {
     clearSave();
     location.reload();
@@ -159,14 +173,15 @@ function frame(now: number): void {
   const realDt = Math.min(0.1, (now - last) / 1000);
   last = now;
 
-  town.tick(realDt * GAME_MINUTES_PER_SECOND);
+  // Speed control scales (or pauses) simulation; rendering always runs.
+  town.tick(realDt * GAME_MINUTES_PER_SECOND * speedControl.effectiveMultiplier);
   for (const event of town.events) toaster.show(event.message);
 
   ensureBundles();
   for (const bundle of bundles.values()) {
     const game = bundle.game;
     bundle.floors.setSecondShaft(!!game.secondElevator);
-    bundle.floors.sync(game.tower.floors);
+    bundle.floors.sync(game.tower.floors, game.staffedLevels);
 
     if (game.secondElevator && !bundle.liftRight) {
       bundle.liftRight = new ElevatorViews(
@@ -193,7 +208,7 @@ function frame(now: number): void {
   }
 
   hud.update(town, focusedGame());
-  buildMenu.update(focusedSlot !== null);
+  buildMenu.update(focusedSlot !== null, town.missions.completedCount, MISSION_DEFS.length);
 
   inspectorTimer += realDt;
   if (inspectorTimer > 0.25) {

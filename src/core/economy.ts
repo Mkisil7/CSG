@@ -14,11 +14,15 @@ export class Economy {
     this.coins = coins;
   }
 
-  /** Called when a resident actually arrives at a shop or restaurant. */
-  recordVisit(kind: ActivityKind): number {
+  /**
+   * Called when a resident actually arrives at a shop or restaurant.
+   * The multiplier folds in business quality, subtype, and shopper happiness.
+   */
+  recordVisit(kind: ActivityKind, multiplier = 1): number {
     let income = 0;
     if (kind === 'shop') income = ECONOMY.shopVisitIncome;
     if (kind === 'eat') income = ECONOMY.restaurantVisitIncome;
+    income = Math.round(income * multiplier * 100) / 100;
     this.earn(income);
     return income;
   }
@@ -59,6 +63,13 @@ export class Economy {
     if (this.coins < amount) return false;
     this.coins -= amount;
     return true;
+  }
+
+  /** Unavoidable cost (e.g. upkeep): deducts what it can, floored at zero. */
+  charge(amount: number): void {
+    const taken = Math.min(this.coins, amount);
+    this.coins -= taken;
+    this.incomeToday -= taken;
   }
 
   newDay(): void {

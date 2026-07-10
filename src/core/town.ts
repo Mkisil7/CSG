@@ -3,6 +3,9 @@ import { Game, GameEvent } from './game';
 import { Economy } from './economy';
 import { createResident, resetDailyFlags } from './residents';
 import { assignJobs, processPromotions, TowerContext } from './careers';
+import { staffedBusinessLevels, updateBusinessDay, resetBusinessDay } from './business';
+import { updateHappinessAndEvict } from './happiness';
+import { Missions } from './missions';
 
 export interface TownSlot {
   id: string;
@@ -13,12 +16,14 @@ export interface TownSlot {
 /**
  * The whole town: a fixed row of tower slots sharing one wallet and one clock.
  * Town runs each tower's local simulation, handles town-wide concerns
- * (move-ins, hiring, promotions, day rollover), and hands commuting residents
- * off between towers when their street-level travel time elapses.
+ * (move-ins, hiring, promotions, business quality, happiness, missions, day
+ * rollover), and hands commuting residents off between towers when their
+ * street-level travel time elapses.
  */
 export class Town {
   slots: TownSlot[];
   economy = new Economy();
+  missions = new Missions();
 
   /** Total game minutes elapsed since the town opened. */
   time = 8 * 60; // day 1 starts at 08:00 so things happen right away
@@ -101,16 +106,13 @@ export class Town {
     const prevDay = this.day;
     this.time += dt;
 
-    if (this.day !== prevDay) {
-      resetDailyFlags(this.allResidents());
-      this.economy.newDay();
-      this.events.push(...processPromotions(this.contexts(), this.day));
-    }
+    if (this.day !== prevDay) this.dayRollover();
 
     this.handleMoveIns(dt);
 
     for (const game of this.towers()) {
       game.homePopulation = this.homeResidentsOf(game.id).length;
+      game.staffedLevels = staffedBusinessLevels(game.tower, game.id, this.allResidents());
       game.tick(dt, this.time);
       this.events.push(...game.events);
     }
@@ -134,6 +136,28 @@ export class Town {
 
     assignJobs(this.contexts(), this.day);
     this.economy.accrue(dt, this.contexts());
+    this.events.push(...this.missions.checkInstant(this));
+  }
+
+  /**
+   * Day rollover, in a deliberate order: promotions first (so nobody is
+   * judged on stale pre-promotion state), then business quality (consumes
+   * yesterday's visit counts), then happiness/evictions (consumes yesterday's
+   * meal/shopping flags and fresh quality), then daily missions (fresh
+   * happiness, income still un-reset), and only then the daily resets.
+   */
+  private dayRollover(): void {
+    const games = this.towers();
+    for (const game of games) {
+      game.staffedLevels = staffedBusinessLevels(game.tower, game.id, this.allResidents());
+    }
+    this.events.push(...processPromotions(this.contexts(), this.day));
+    updateBusinessDay(this.contexts(), this.economy);
+    this.events.push(...updateHappinessAndEvict(games, this.day));
+    this.events.push(...this.missions.checkDaily(this));
+    resetBusinessDay(this.contexts());
+    resetDailyFlags(this.allResidents());
+    this.economy.newDay();
   }
 
   private handleMoveIns(dt: number): void {

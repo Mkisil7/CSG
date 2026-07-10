@@ -11,22 +11,37 @@ Free to play, no install, no ads, no in-app purchases. Saves locally in your bro
 ## How to play
 
 - **Build floors** with the bottom menu: Apartments bring residents; Shops,
-  Restaurants, and Offices give them places to spend and work.
-- **Click anything**: floors open an inspector (rename them! see who lives or
-  works there), residents show their job title and tenure, empty lots show the
-  price of your next tower.
+  Restaurants, and Offices give them places to spend and work. Each business
+  gets a **subtype** you pick when building — grocery/boutique/electronics,
+  coffee/fast-food/fine-dining, tech/law/creative — with different costs,
+  income, and appeal to different resident tastes.
+- **Businesses are real**: an unstaffed business is closed (gray sign, dim
+  lights, no customers). Quality grows or decays daily based on staffing,
+  traffic, and staff seniority; the inspector shows each floor's letter grade
+  and daily profit & loss. Residents pick where to shop by quality and taste.
+- **Click anything**: floors open an inspector (rename them! see the grade and
+  who works there), residents show their job title, traits, and happiness,
+  empty lots show the price of your next tower.
 - **Careers are real**: residents start as Interns/Clerks/Servers and get
   promoted when tenure is met *and* a higher slot is free on their floor. Stay
   blocked too long and they'll jump ship to a promotion in another building —
   even another tower.
+- **Keep them happy**: residents track housing, employment, food, and
+  entertainment needs, plus lift waits and commute length. Happy residents
+  spend more; miserable ones eventually **move out**.
 - **Manage the lifts**: one cab per shaft. Buy speed tiers, and for a small
-  fortune add a second shaft on the far side. Watch the average wait — when it
-  climbs, your shops starve for visitors.
+  fortune add a second shaft on the far side. Riders pick the shaft that will
+  actually arrive first, and commuters leave home early enough to make their
+  shift.
 - **Grow the town**: unlock new lots along the street and raise more towers.
-  Residents will commute to jobs in other towers (a real time cost), so a
-  bedroom tower next to a jobs tower is a strategy — with a price.
+  Commute time scales with real distance between towers, so where you put the
+  jobs matters.
+- **Missions**: a checklist of milestones with coin rewards (🎯 in the menu).
+- **Speed controls**: pause / 1× / 2× / 4× (top right). Come back later and
+  get a "while you were away" report — the town keeps living without you (up
+  to a cap).
 - Income: rent from every resident, tier-multiplied wages from workers actually
-  at work, and per-visit income when someone really walks into a shop or café.
+  at work, and per-visit income scaled by business quality and shopper mood.
 - Progress saves automatically to `localStorage`.
 
 ## Development

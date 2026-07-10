@@ -86,6 +86,18 @@ describe('ElevatorSystem', () => {
     expect(elevator.averageWait()).toBeGreaterThan(0);
   });
 
+  it('estimatePickupEta reflects car state and queue depth', () => {
+    const elevator = new ElevatorSystem(1);
+    // Idle at floor 0: ETA at floor 4 is pure travel time.
+    expect(elevator.estimatePickupEta(4)).toBeCloseTo(4 / elevator.speed, 5);
+    // Same floor, idle: essentially immediate.
+    expect(elevator.estimatePickupEta(0)).toBe(0);
+    // A queue at the floor adds a penalty.
+    elevator.request('a', 4, 0, 0);
+    elevator.request('b', 4, 0, 0);
+    expect(elevator.estimatePickupEta(4)).toBeGreaterThan(4 / elevator.speed);
+  });
+
   it('a speed-tier upgrade delivers riders faster', () => {
     const slow = new ElevatorSystem(1);
     const fast = new ElevatorSystem(1);

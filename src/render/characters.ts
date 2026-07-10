@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Resident } from '../core/types';
 import { ElevatorSystem } from '../core/elevator';
 import { ROOM_LEFT, ROOM_RIGHT, floorY } from './layout';
+import { getAsset } from './assets';
 
 const WALK_SPEED = 6; // world units per real second
 
@@ -25,6 +26,9 @@ interface CharacterView {
     rightLeg: THREE.Object3D;
     body: THREE.Object3D;
   };
+  /** Per-character GPU resources to free on removal (empty for .glb clones,
+   *  whose geometry/materials are shared with the asset cache). */
+  disposables: { geometries: THREE.BufferGeometry[]; materials: THREE.Material[] };
 }
 
 /** Articulated little people that walk to their spot on each floor. */
@@ -66,6 +70,7 @@ export class CharacterViews {
     for (const [id, view] of this.views) {
       if (!seen.has(id)) {
         this.group.remove(view.group);
+        disposeCharacter(view);
         this.views.delete(id);
       }
     }
@@ -155,11 +160,40 @@ export class CharacterViews {
   }
 }
 
-const SKIN = new THREE.MeshLambertMaterial({ color: 0xf7dcc4 });
+const SKIN = new THREE.MeshLambertMaterial({ color: 0xf7dcc4 }); // shared: never disposed
 const HAIR_COLORS = [0x5b4632, 0x2e2a28, 0xc9973f, 0x8a5a3b, 0x6e6e72];
 const PANT_COLORS = [0x4a5568, 0x6b5b4a, 0x3f5566, 0x5a4a6b];
 
+/** Free a removed character's per-instance GPU resources (leak fix). */
+function disposeCharacter(view: CharacterView): void {
+  for (const g of view.disposables.geometries) g.dispose();
+  for (const m of view.disposables.materials) m.dispose();
+}
+
 function buildCharacter(color: number): CharacterView {
+  // Optional real model: expects children named ArmL/ArmR/LegL/LegR/Body for
+  // the walk cycle; any missing name simply doesn't animate. Clones share the
+  // cached asset's geometry/materials, so nothing here needs disposal.
+  const asset = getAsset('character');
+  if (asset) {
+    const dummy = () => new THREE.Group();
+    return {
+      group: asset,
+      targetX: 0,
+      targetY: 0,
+      targetZ: 1,
+      phase: Math.random() * Math.PI * 2,
+      limbs: {
+        leftArm: asset.getObjectByName('ArmL') ?? dummy(),
+        rightArm: asset.getObjectByName('ArmR') ?? dummy(),
+        leftLeg: asset.getObjectByName('LegL') ?? dummy(),
+        rightLeg: asset.getObjectByName('LegR') ?? dummy(),
+        body: asset.getObjectByName('Body') ?? asset,
+      },
+      disposables: { geometries: [], materials: [] },
+    };
+  }
+
   const group = new THREE.Group();
   const shirt = new THREE.MeshLambertMaterial({ color });
   const hash = color % 97;
@@ -215,6 +249,10 @@ function buildCharacter(color: number): CharacterView {
     targetZ: 1,
     phase: Math.random() * Math.PI * 2,
     limbs: { leftArm, rightArm, leftLeg, rightLeg, body },
+    disposables: {
+      geometries: [torso.geometry, head.geometry, cap.geometry, armGeom, legGeom],
+      materials: [shirt, pants, hair], // SKIN is shared module-wide — never disposed
+    },
   };
 }
 

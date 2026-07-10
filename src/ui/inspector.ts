@@ -2,16 +2,21 @@ import { Town } from '../core/town';
 import { Resident, FLOOR_CONFIG, TOWN } from '../core/types';
 import { jobTitle } from '../core/careers';
 import { MAX_FLOOR_NAME_LENGTH } from '../core/floorNames';
+import { assignedStaff, businessGrade, isJobFloorType, subtypeProfile } from '../core/business';
+import { worstFactor } from '../core/happiness';
+import { MISSION_DEFS } from '../core/missions';
 
 export type Selection =
   | { kind: 'floor'; towerId: string; level: number }
   | { kind: 'resident'; residentId: string }
   | { kind: 'slot'; index: number }
+  | { kind: 'missions' }
   | null;
 
 /**
- * Click-to-inspect panel: floors (renamable, occupant list), residents
- * (job title, tenure, home), and locked tower slots (purchase).
+ * Click-to-inspect panel: floors (renamable, occupant list, business grade),
+ * residents (job, happiness, traits), locked tower slots (purchase), and the
+ * missions checklist.
  */
 export class Inspector {
   private selection: Selection = null;
@@ -61,6 +66,21 @@ export class Inspector {
     const sel = this.selection;
     if (!sel) return null;
 
+    if (sel.kind === 'missions') {
+      const rows = MISSION_DEFS.map((def) => {
+        const done = town.missions.completed.has(def.id);
+        return `<div class="insp-row ${done ? 'mission-done' : ''}">
+          ${done ? '✅' : '⬜'} <b>${def.label}</b> · +${def.reward}
+          <div class="mission-desc">${def.description}</div>
+        </div>`;
+      }).join('');
+      return `
+        <button class="insp-close" id="insp-close">×</button>
+        <div class="insp-title">Missions</div>
+        <div class="insp-sub">${town.missions.completedCount}/${MISSION_DEFS.length} complete</div>
+        ${rows}`;
+    }
+
     if (sel.kind === 'floor') {
       const game = town.towerById(sel.towerId);
       const floor = game?.tower.floors[sel.level];
@@ -76,15 +96,21 @@ export class Inspector {
           homes.map((r) => escapeHtml(r.name)),
           'No one lives here yet',
         );
-      } else if (floor.type !== 'lobby') {
-        const workers = town
-          .allResidents()
-          .filter((r) => r.jobTowerId === sel.towerId && r.jobFloor === sel.level);
-        body = listSection(
-          `Staff (${workers.length}/${FLOOR_CONFIG[floor.type].jobs})`,
-          workers.map((r) => `${escapeHtml(r.name)} — ${jobTitle(r, floor) ?? 'Worker'}`),
-          'No staff yet',
-        );
+      } else if (isJobFloorType(floor.type)) {
+        const staff = assignedStaff(town.allResidents(), sel.towerId, sel.level);
+        const open = game.staffedLevels.has(sel.level);
+        const { grade } = businessGrade(floor, staff.length);
+        const profile = subtypeProfile(floor);
+        const net = Math.round(floor.revenueToday - floor.expensesToday);
+        body = `
+          <div class="insp-row">${open ? '🟢 Open' : '⚫ Closed — no staff'} · Grade <b class="grade-${grade}">${grade}</b></div>
+          <div class="insp-row">${profile ? escapeHtml(profile.label) : ''} · Quality ${Math.round(floor.quality)}/100</div>
+          <div class="insp-row">Today: +${Math.round(floor.revenueToday)} / −${Math.round(floor.expensesToday)} (net ${net >= 0 ? '+' : ''}${net})</div>
+          ${listSection(
+            `Staff (${staff.length}/${FLOOR_CONFIG[floor.type].jobs})`,
+            staff.map((r) => `${escapeHtml(r.name)} — ${jobTitle(r, floor) ?? 'Worker'}`),
+            'No staff yet — closed',
+          )}`;
       }
 
       const rename =
@@ -111,11 +137,15 @@ export class Inspector {
       const tenure =
         resident.jobStartDay !== null ? Math.max(0, town.day - resident.jobStartDay) : 0;
       const commutes = resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId;
+      const mood = Math.round(resident.happiness);
+      const moodIcon = mood >= 70 ? '😊' : mood >= 40 ? '😐' : '😟';
 
       return `
         <button class="insp-close" id="insp-close">×</button>
         <div class="insp-title">${escapeHtml(resident.name)}</div>
         <div class="insp-sub">${statusLine(resident)}</div>
+        <div class="insp-row">${moodIcon} Happiness ${mood}/100${mood < 70 ? ` · worst: ${worstFactor(resident)}` : ''}</div>
+        <div class="insp-row">✨ ${resident.traits.map(escapeHtml).join(', ') || 'no particular tastes'}</div>
         <div class="insp-row">🏠 ${escapeHtml(homeFloor?.name ?? 'Homeless')}</div>
         <div class="insp-row">${
           title && jobFloor

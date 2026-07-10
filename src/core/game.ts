@@ -1,18 +1,21 @@
 import {
+  BusinessSubtype,
   ELEVATOR_TIERS,
   FLOOR_CONFIG,
   FloorType,
   Resident,
   SECOND_SHAFT,
-  TOWN,
 } from './types';
 import { Tower } from './tower';
 import { ElevatorSystem } from './elevator';
 import { Economy } from './economy';
 import { planNext } from './residents';
+import { commuteMinutesBetween } from './townLayout';
+import { pickBusinessFloor, qualityIncomeMultiplier, subtypeProfile } from './business';
+import { spendingMultiplier } from './happiness';
 
 export interface GameEvent {
-  kind: 'visit' | 'move-in' | 'hire' | 'promotion' | 'job-switch' | 'build';
+  kind: 'visit' | 'move-in' | 'move-out' | 'hire' | 'promotion' | 'job-switch' | 'build' | 'mission';
   message: string;
 }
 
@@ -21,15 +24,15 @@ export interface Departure {
   toTowerId: string;
 }
 
-/** Pick the shaft with the shorter queue at the rider's floor (ties → first). */
+/** Pick the shaft likely to pick a rider up first (estimated ETA, ties → first). */
 export function chooseShaft(shafts: ElevatorSystem[], floor: number): ElevatorSystem {
   let best = shafts[0];
-  let bestLen = best.queues.get(floor)?.length ?? 0;
+  let bestEta = best.estimatePickupEta(floor);
   for (const shaft of shafts.slice(1)) {
-    const len = shaft.queues.get(floor)?.length ?? 0;
-    if (len < bestLen) {
+    const eta = shaft.estimatePickupEta(floor);
+    if (eta < bestEta) {
       best = shaft;
-      bestLen = len;
+      bestEta = eta;
     }
   }
   return best;
@@ -51,6 +54,9 @@ export class Game {
 
   /** Residents whose home is this tower — maintained by Town each tick. */
   homePopulation = 0;
+
+  /** Business levels with at least one hired staffer — maintained by Town. */
+  staffedLevels = new Set<number>();
 
   /** Events emitted during the last tick, for UI toasts. */
   events: GameEvent[] = [];
@@ -81,10 +87,11 @@ export class Game {
     return { ok: true };
   }
 
-  buildFloor(type: Exclude<FloorType, 'lobby'>): boolean {
+  buildFloor(type: Exclude<FloorType, 'lobby'>, subtype?: BusinessSubtype): boolean {
     if (!this.canBuild(type).ok) return false;
-    this.economy.spend(this.tower.nextFloorCost(type));
-    this.tower.addFloor(type);
+    if (this.economy.coins < this.tower.nextFloorCost(type, subtype)) return false;
+    this.economy.spend(this.tower.nextFloorCost(type, subtype));
+    this.tower.addFloor(type, subtype);
     return true;
   }
 
@@ -127,10 +134,12 @@ export class Game {
     return true;
   }
 
-  /** Average wait across shafts, weighted equally. */
+  /** Rider-weighted average wait: pools raw samples across shafts, so an
+   *  idle second shaft can't dilute a congested first one. */
   averageWait(): number {
-    const shafts = this.shafts();
-    return shafts.reduce((sum, s) => sum + s.averageWait(), 0) / shafts.length;
+    const samples = this.shafts().flatMap((s) => [...s.recentWaits()]);
+    if (samples.length === 0) return 0;
+    return samples.reduce((a, b) => a + b, 0) / samples.length;
   }
 
   // ---- simulation -----------------------------------------------------
@@ -172,13 +181,18 @@ export class Game {
     const currentFloor = resident.state.floor;
     const crossTowerJob = resident.jobTowerId !== null && resident.jobTowerId !== this.id;
     const crossTowerHome = resident.homeTowerId !== this.id;
+    const commuteMinutes = crossTowerJob
+      ? commuteMinutesBetween(this.id, resident.jobTowerId!)
+      : 0;
     const { activity, duration } = planNext(
       resident,
       this.time % (24 * 60),
-      this.tower,
+      (type) => pickBusinessFloor(this.tower, this.staffedLevels, type, resident.traits),
       Math.random,
       crossTowerJob,
       crossTowerHome,
+      commuteMinutes,
+      this.averageWait(),
     );
 
     if (activity.kind === 'commute' && currentFloor === 0) {
@@ -210,7 +224,7 @@ export class Game {
     resident.state = {
       kind: 'commuting',
       toTowerId,
-      until: this.time + TOWN.commuteMinutes,
+      until: this.time + commuteMinutesBetween(this.id, toTowerId),
     };
   }
 
@@ -244,7 +258,17 @@ export class Game {
     if (resident.state.kind !== 'idle') return;
     const kind = resident.state.activity.kind;
     if (kind === 'shop' || kind === 'eat') {
-      const income = this.economy.recordVisit(kind);
+      const floor = this.tower.floors[resident.state.activity.floor];
+      let multiplier = spendingMultiplier(resident.happiness);
+      if (floor) {
+        multiplier *= qualityIncomeMultiplier(floor.quality);
+        multiplier *= subtypeProfile(floor)?.incomeMultiplier ?? 1;
+      }
+      const income = this.economy.recordVisit(kind, multiplier);
+      if (floor) {
+        floor.visitsToday++;
+        floor.revenueToday += income;
+      }
       this.events.push({
         kind: 'visit',
         message: `${resident.name} spent ${income} coins ${kind === 'eat' ? 'eating' : 'shopping'}`,

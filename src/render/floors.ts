@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Floor, FloorType } from '../core/types';
+import { getAsset, AssetKey } from './assets';
 import {
   FLOOR_HEIGHT,
   ROOM_DEPTH,
@@ -68,6 +69,8 @@ function box(
 export class FloorViews {
   readonly group = new THREE.Group();
   private built = new Map<number, THREE.Group>();
+  /** Open/closed indicator per business floor: sign material + wall material. */
+  private openState = new Map<number, { signMat: THREE.MeshLambertMaterial; wallMat: THREE.MeshLambertMaterial; baseColor: number; open: boolean }>();
   private shafts: THREE.Group[] = [];
   private roof: THREE.Group | null = null;
   private builtHeight = 0;
@@ -88,13 +91,16 @@ export class FloorViews {
     // Retroactive: every floor's slab must span to the new shaft — rebuild all.
     for (const view of this.built.values()) this.group.remove(view);
     this.built.clear();
+    this.openState.clear();
     this.builtHeight = 0;
   }
 
-  sync(floors: Floor[]): void {
+  sync(floors: Floor[], staffedLevels?: Set<number>): void {
     for (const floor of floors) {
       if (!this.built.has(floor.level)) {
-        const view = buildFloorView(floor, this.secondShaft);
+        const view = buildFloorView(floor, this.secondShaft, (state) =>
+          this.openState.set(floor.level, state),
+        );
         view.userData = { pickable: 'floor', floorLevel: floor.level, towerId: this.towerId };
         this.built.set(floor.level, view);
         this.group.add(view);
@@ -104,6 +110,20 @@ export class FloorViews {
       this.builtHeight = floors.length;
       this.rebuildShafts(floors.length);
       this.rebuildRoof(floors.length);
+    }
+    if (staffedLevels) this.updateOpenStates(staffedLevels);
+  }
+
+  /** Businesses without hired staff read as closed: gray sign, dimmed walls. */
+  private updateOpenStates(staffedLevels: Set<number>): void {
+    for (const [level, state] of this.openState) {
+      const open = staffedLevels.has(level);
+      if (open === state.open) continue;
+      state.open = open;
+      state.signMat.color.setHex(open ? 0x6fcf7c : 0x9a9a9a);
+      const dim = open ? 1 : 0.6;
+      state.wallMat.color.setHex(state.baseColor);
+      state.wallMat.color.multiplyScalar(dim);
     }
   }
 
@@ -160,10 +180,28 @@ export function buildShaftGroup(x: number, floorCount: number): THREE.Group {
   return shaft;
 }
 
-function buildFloorView(floor: Floor, secondShaft: boolean): THREE.Group {
+function buildFloorView(
+  floor: Floor,
+  secondShaft: boolean,
+  registerOpenState?: (state: {
+    signMat: THREE.MeshLambertMaterial;
+    wallMat: THREE.MeshLambertMaterial;
+    baseColor: number;
+    open: boolean;
+  }) => void,
+): THREE.Group {
   const view = new THREE.Group();
   const y = floorY(floor.level);
   const wallMat = new THREE.MeshLambertMaterial({ color: WALL_COLORS[floor.type] });
+
+  // Business floors get an open/closed sign by the front edge.
+  if (floor.type === 'shop' || floor.type === 'restaurant' || floor.type === 'office') {
+    const signMat = new THREE.MeshLambertMaterial({ color: 0x6fcf7c });
+    const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.12), signMat);
+    sign.position.set(ROOM_LEFT + 0.6, y + FLOOR_HEIGHT - 0.6, ROOM_DEPTH / 2 - 0.2);
+    view.add(sign);
+    registerOpenState?.({ signMat, wallMat, baseColor: WALL_COLORS[floor.type], open: true });
+  }
 
   // Slab spans from the left shaft to the right shaft (when built) or room edge.
   const slabLeft = SHAFT_X - SHAFT_WIDTH / 2 - 0.3;
@@ -214,9 +252,18 @@ function addBackWallDetail(view: THREE.Group, type: FloorType, y: number): void 
   }
 }
 
-/** Compound-mesh furniture silhouettes per floor type — no textures needed. */
+/** Compound-mesh furniture silhouettes per floor type — no textures needed.
+ *  A .glb dropped into public/models/ (see assets.ts) replaces the procedural
+ *  set for that floor type automatically. */
 function addFurniture(view: THREE.Group, floor: Floor, y: number): void {
   const zRow = BACK_Z + 1.5;
+
+  const asset = getAsset(`furniture-${floor.type}` as AssetKey);
+  if (asset) {
+    asset.position.set(ROOM_CENTER_X, y, zRow);
+    view.add(asset);
+    return;
+  }
   const seed = floor.level * 13;
   const jitter = (i: number) => (((seed + i * 7) % 5) - 2) * 0.18;
 

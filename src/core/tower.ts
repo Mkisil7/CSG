@@ -1,4 +1,6 @@
 import {
+  BUSINESS_SUBTYPES,
+  BusinessSubtype,
   Floor,
   FloorType,
   FLOOR_CONFIG,
@@ -7,18 +9,32 @@ import {
 } from './types';
 import { generateFloorName, MAX_FLOOR_NAME_LENGTH } from './floorNames';
 
+function emptyDayStats() {
+  return { quality: 50, visitsToday: 0, revenueToday: 0, expensesToday: 0 };
+}
+
 export class Tower {
-  floors: Floor[] = [{ level: 0, type: 'lobby', name: 'Lobby' }];
+  floors: Floor[] = [{ level: 0, type: 'lobby', name: 'Lobby', ...emptyDayStats() }];
 
   get height(): number {
     return this.floors.length;
   }
 
-  addFloor(type: Exclude<FloorType, 'lobby'>, rand: () => number = Math.random): Floor {
+  addFloor(
+    type: Exclude<FloorType, 'lobby'>,
+    subtype?: BusinessSubtype,
+    rand: () => number = Math.random,
+  ): Floor {
+    // Business floors default to their first subtype if none was chosen.
+    const resolved =
+      subtype ??
+      (type === 'residential' ? undefined : BUSINESS_SUBTYPES[type]?.[0]?.subtype);
     const floor: Floor = {
       level: this.floors.length,
       type,
       name: generateFloorName(type, rand),
+      subtype: resolved,
+      ...emptyDayStats(),
     };
     this.floors.push(floor);
     return floor;
@@ -34,10 +50,16 @@ export class Tower {
     return true;
   }
 
-  /** Cost of the next floor of the given type, scaling with tower height. */
-  nextFloorCost(type: Exclude<FloorType, 'lobby'>): number {
+  /** Cost of the next floor of the given type/subtype, scaling with tower height. */
+  nextFloorCost(type: Exclude<FloorType, 'lobby'>, subtype?: BusinessSubtype): number {
     const built = this.floors.length - 1; // don't count the free lobby
-    return Math.round(FLOOR_CONFIG[type].baseCost * Math.pow(FLOOR_COST_GROWTH, built));
+    const subtypeMult =
+      type !== 'residential' && subtype
+        ? BUSINESS_SUBTYPES[type]?.find((p) => p.subtype === subtype)?.costMultiplier ?? 1
+        : 1;
+    return Math.round(
+      FLOOR_CONFIG[type].baseCost * subtypeMult * Math.pow(FLOOR_COST_GROWTH, built),
+    );
   }
 
   floorsOfType(type: FloorType): Floor[] {

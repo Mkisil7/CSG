@@ -1,5 +1,6 @@
 import { Town } from '../core/town';
 import { Game } from '../core/game';
+import { averageHappiness } from '../core/happiness';
 
 export class Hud {
   private readonly root: HTMLElement;
@@ -7,7 +8,7 @@ export class Hud {
 
   constructor(root: HTMLElement) {
     this.root = root;
-    for (const key of ['coins', 'population', 'clock', 'income', 'wait']) {
+    for (const key of ['coins', 'population', 'happiness', 'clock', 'income', 'wait']) {
       const chip = document.createElement('div');
       chip.className = 'hud-chip';
       this.root.appendChild(chip);
@@ -19,9 +20,12 @@ export class Hud {
     const tod = town.timeOfDay;
     const hh = String(Math.floor(tod / 60)).padStart(2, '0');
     const mm = String(Math.floor(tod % 60)).padStart(2, '0');
+    const mood = Math.round(averageHappiness(town.allResidents()));
+    const moodIcon = mood >= 70 ? '😊' : mood >= 40 ? '😐' : '😟';
 
     this.chips.coins.innerHTML = `<small>Coins</small>${Math.floor(town.economy.coins)}`;
     this.chips.population.innerHTML = `<small>Residents</small>${town.population}`;
+    this.chips.happiness.innerHTML = `<small>Happiness</small>${moodIcon} ${mood}`;
     this.chips.clock.innerHTML = `<small>Day ${town.day}</small>${hh}:${mm}`;
     this.chips.income.innerHTML = `<small>Earned today</small>${Math.floor(town.economy.incomeToday)}`;
     this.chips.wait.innerHTML = focused

@@ -1,4 +1,4 @@
-import { ELEVATOR } from './types';
+import { ELEVATOR, QUEUE_PENALTY_FACTOR } from './types';
 
 export interface WaitingRider {
   residentId: string;
@@ -75,6 +75,37 @@ export class ElevatorSystem {
   averageWait(): number {
     if (this.waitSamples.length === 0) return 0;
     return this.waitSamples.reduce((a, b) => a + b, 0) / this.waitSamples.length;
+  }
+
+  /** Raw recent wait samples, for rider-weighted pooling across shafts. */
+  recentWaits(): readonly number[] {
+    return this.waitSamples;
+  }
+
+  /**
+   * Rough game-minutes until a car could pick a new rider up at this floor:
+   * the best car's travel/door time given its current state, plus a penalty
+   * for riders already queued there (they board first and eat capacity).
+   */
+  estimatePickupEta(floor: number): number {
+    let best = Infinity;
+    for (const car of this.cars) {
+      const travelHere = Math.abs(floor - car.pos) / this.speed;
+      let eta: number;
+      if (car.state === 'idle') {
+        eta = travelHere;
+      } else if (car.state === 'moving' && car.target !== null) {
+        eta =
+          Math.abs(car.target - car.pos) / this.speed +
+          this.doorTime +
+          Math.abs(floor - car.target) / this.speed;
+      } else {
+        eta = car.doorTimer + (Math.round(car.pos) === floor ? 0 : travelHere);
+      }
+      best = Math.min(best, eta);
+    }
+    const queued = this.queues.get(floor)?.length ?? 0;
+    return best + queued * this.doorTime * QUEUE_PENALTY_FACTOR;
   }
 
   request(residentId: string, from: number, to: number, now: number): void {
