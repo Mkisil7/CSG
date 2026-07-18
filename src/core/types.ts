@@ -303,6 +303,8 @@ export const ELEVATOR_TIERS: { cost: number; speed: number; doorTime: number; ca
   { cost: 300, speed: 0.5, doorTime: 1.6, capacity: 8 },
   { cost: 800, speed: 0.72, doorTime: 1.2, capacity: 11 },
   { cost: 2000, speed: 1.05, doorTime: 0.8, capacity: 15 },
+  { cost: 4500, speed: 1.45, doorTime: 0.6, capacity: 20 },
+  { cost: 9000, speed: 1.9, doorTime: 0.45, capacity: 26 },
 ];
 
 /** One-time unlock for a second, independent lift shaft on the far side. */

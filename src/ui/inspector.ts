@@ -1,5 +1,14 @@
 import { Town } from '../core/town';
-import { BUSINESS, Resident, FLOOR_CONFIG, TOWN, ZONE_CONFIGS, ZoneType, SELECTABLE_ZONES } from '../core/types';
+import {
+  BUSINESS,
+  HAPPINESS,
+  Resident,
+  FLOOR_CONFIG,
+  TOWN,
+  ZONE_CONFIGS,
+  ZoneType,
+  SELECTABLE_ZONES,
+} from '../core/types';
 import { jobTitle } from '../core/careers';
 import { MAX_FLOOR_NAME_LENGTH } from '../core/floorNames';
 import { assignedStaff, businessGrade, isJobFloorType, subtypeProfile } from '../core/business';
@@ -135,7 +144,21 @@ export class Inspector {
         Math.abs(b.vibrancy) >= 0.05
           ? `<div class="insp-row">${b.vibrancy >= 0 ? '✨' : '🥀'} Business vibrancy: <b class="${b.vibrancy >= 0 ? 'grade-A' : 'grade-F'}">${b.vibrancy >= 0 ? '+' : ''}${b.vibrancy.toFixed(0)}</b></div>`
           : '';
-      const worst = b.needs.reduce((a, c) => (c.value < a.value ? c : a));
+      // Rank every drag — needs (weighted deficit) and environment penalties —
+      // on the same "happiness points lost" scale, so the advice points at
+      // whatever actually hurts most (e.g. lift queues, not a lowish need).
+      const w = HAPPINESS.weights;
+      const need = (label: string) => b.needs.find((n) => n.value !== undefined && n.label === label)?.value ?? 100;
+      const pen = (label: string) => b.penalties.find((p) => p.label === label)?.value ?? 0;
+      const drags = [
+        { label: 'Housing', loss: w.housing * (100 - need('Housing')) },
+        { label: 'Employment', loss: w.employment * (100 - need('Employment')) },
+        { label: 'Food', loss: w.food * (100 - need('Food')) },
+        { label: 'Entertainment', loss: w.entertainment * (100 - need('Entertainment')) },
+        { label: 'Lift queues', loss: pen('Lift queues') },
+        { label: 'Long commutes', loss: pen('Long commutes') },
+      ];
+      const worst = drags.reduce((a, c) => (c.loss > a.loss ? c : a));
       return `
         <button class="insp-close" id="insp-close">×</button>
         <div class="insp-title">Happiness ${Math.round(b.average)}/100</div>
@@ -146,7 +169,7 @@ export class Inspector {
         ${vibrancyRow}
         ${penaltyRows || '<div class="insp-row insp-empty">No lift or commute strain</div>'}
         <div class="insp-section">Biggest drag</div>
-        <div class="insp-row">${worst.value >= 75 ? '😊 Everyone is pretty content' : `Lowest need: <b>${escapeHtml(worst.label)}</b> — ${lowNeedHint(worst.label)}`}</div>`;
+        <div class="insp-row">${worst.loss < 4 ? '😊 Everyone is pretty content' : `<b>${escapeHtml(worst.label)}</b> — ${dragHint(worst.label)}`}</div>`;
     }
 
     if (sel.kind === 'floor') {
@@ -412,7 +435,7 @@ function eventIcon(kind: GameEventKind): string {
   }
 }
 
-function lowNeedHint(label: string): string {
+function dragHint(label: string): string {
   switch (label) {
     case 'Housing':
       return 'apartments are crowded; build more residential floors';
@@ -422,6 +445,10 @@ function lowNeedHint(label: string): string {
       return 'not enough places to eat; build restaurants';
     case 'Entertainment':
       return 'nothing to do; add shops and bars';
+    case 'Lift queues':
+      return 'one lift can’t serve a tall, busy tower even at top speed — add a 2nd lift shaft (and upgrade lift speed). Spreading residents across more towers helps too';
+    case 'Long commutes':
+      return 'jobs are too far from homes; build workplaces closer, or zone a lot Transit-Oriented for a gentler commute';
     default:
       return 'invest here to lift the town’s mood';
   }

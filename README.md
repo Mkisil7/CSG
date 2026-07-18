@@ -41,10 +41,12 @@ needed after the first visit.
 - **Keep them happy**: residents track housing, employment, food, and
   entertainment needs, plus lift waits and commute length. Happy residents
   spend more; miserable ones eventually **move out**.
-- **Manage the lifts**: one cab per shaft. Buy speed tiers, and for a small
-  fortune add a second shaft on the far side. Riders pick the shaft that will
-  actually arrive first, and commuters leave home early enough to make their
-  shift.
+- **Manage the lifts**: one cab per shaft. Buy speed-and-capacity tiers, and —
+  crucially for a tall, busy tower — add a **second shaft**: one cab simply
+  can't serve a big tower even at top speed, and a second lift roughly triples
+  throughput. Riders pick the shaft that will arrive first, and commuters leave
+  home early enough to make their shift. (Tap the Happiness meter and it'll
+  tell you when the lifts are your bottleneck.)
 - **Grow the town**: unlock up to nine more lots along the street (ten in all)
   and raise a whole skyline of towers. Commute time scales with real distance
   between towers, so where you put the jobs matters.
