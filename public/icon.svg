@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#bfe3f2"/>
+      <stop offset="1" stop-color="#a6d3ea"/>
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed background so the platform mask has room (maskable safe zone). -->
+  <rect width="512" height="512" fill="url(#sky)"/>
+  <rect x="0" y="392" width="512" height="120" fill="#a9d9a0"/>
+  <!-- Tower, kept within the central safe area. -->
+  <rect x="176" y="150" width="160" height="252" rx="12" fill="#efe9dc" stroke="#d7cdb8" stroke-width="4"/>
+  <rect x="166" y="130" width="180" height="28" rx="9" fill="#c9bfa8"/>
+  <!-- Window grid. -->
+  <g fill="#9fc9e8">
+    <rect x="196" y="176" width="32" height="30" rx="4"/>
+    <rect x="240" y="176" width="32" height="30" rx="4"/>
+    <rect x="284" y="176" width="32" height="30" rx="4"/>
+    <rect x="196" y="224" width="32" height="30" rx="4"/>
+    <rect x="240" y="224" width="32" height="30" rx="4"/>
+    <rect x="284" y="224" width="32" height="30" rx="4"/>
+    <rect x="196" y="272" width="32" height="30" rx="4"/>
+    <rect x="240" y="272" width="32" height="30" rx="4"/>
+    <rect x="284" y="272" width="32" height="30" rx="4"/>
+    <rect x="196" y="320" width="32" height="30" rx="4"/>
+    <rect x="284" y="320" width="32" height="30" rx="4"/>
+  </g>
+  <!-- Door. -->
+  <rect x="240" y="352" width="32" height="50" rx="5" fill="#9a8fe0"/>
+</svg>

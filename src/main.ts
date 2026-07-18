@@ -254,5 +254,15 @@ requestAnimationFrame(frame);
 
 window.addEventListener('beforeunload', () => saveGame(town));
 
+// Register the service worker so the game installs and runs fully offline.
+// Production only, so `npm run dev`'s unhashed modules are never cached.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {
+      // Offline support is a progressive enhancement — ignore registration failures.
+    });
+  });
+}
+
 // Debug/testing hook (harmless in production; state is local-only anyway).
 (window as unknown as { __town: Town }).__town = town;

@@ -1,0 +1,19 @@
+{
+  "name": "Tower Town",
+  "short_name": "Tower Town",
+  "description": "A cozy tower-town builder with a live, traffic-driven economy. Plays fully offline.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#bfe3f2",
+  "theme_color": "#9a8fe0",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

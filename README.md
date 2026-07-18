@@ -6,7 +6,12 @@ ride the lifts, go to work, climb career ladders, grab lunch, and even commute
 between towers. Income comes from real foot traffic, so lift throughput is a
 genuine gameplay constraint, not a cosmetic animation.
 
-Free to play, no install, no ads, no in-app purchases. Saves locally in your browser.
+Free to play, no ads, no in-app purchases. Saves locally in your browser.
+
+**Works offline.** It's an installable PWA: load it online once, then it runs
+with no connection at all. On your phone or desktop, use your browser's "Add to
+Home Screen" / "Install" option to launch it like a native app — no service
+needed after the first visit.
 
 ## How to play
 
