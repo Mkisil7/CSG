@@ -17,10 +17,11 @@ const BUILD_ORDER: BuildableType[] = ['residential', 'shop', 'restaurant', 'offi
 
 /**
  * Bottom build bar. On desktop it's a flat row of buttons. On touch / narrow
- * screens it collapses into a compact bar — [🏗 Build] [⚙ Manage] [View] — where
- * Build and Manage open a sheet above the bar, so the controls no longer eat
- * half the screen. Floor and lift actions apply to the currently focused tower;
- * business floor types open a subtype picker before building.
+ * screens it becomes a compact 3-button dock — [🏗 Build] [⚙ Manage] [View] —
+ * that opens a tidy bottom-sheet above it (dimming the rest of the screen), so
+ * the controls never overlap the game or each other. Business floor types open
+ * a subtype picker before building (a drill-in inside the sheet on mobile, a
+ * floating popover on desktop).
  */
 export class BuildMenu {
   private buttons = new Map<BuildableType, HTMLButtonElement>();
@@ -36,6 +37,7 @@ export class BuildMenu {
   // Mobile grouping.
   private readonly mobile = IS_COARSE_POINTER;
   private sheet: HTMLDivElement | null = null;
+  private backdrop: HTMLDivElement | null = null;
   private buildToggle: HTMLButtonElement | null = null;
   private manageToggle: HTMLButtonElement | null = null;
   private openGroup: 'build' | 'manage' | null = null;
@@ -71,7 +73,8 @@ export class BuildMenu {
           this.afterBuild();
           return;
         }
-        this.togglePopover(type);
+        if (this.mobile) this.showSubtypeSheet(type);
+        else this.togglePopover(type);
       });
       this.buttons.set(type, btn);
     }
@@ -109,7 +112,6 @@ export class BuildMenu {
     this.viewButton = document.createElement('button');
     this.viewButton.className = 'build-btn view-btn';
     this.viewButton.addEventListener('click', () => {
-      this.hidePopover();
       this.closeSheet();
       onToggleView();
     });
@@ -154,21 +156,29 @@ export class BuildMenu {
   }
 
   private layoutMobile(root: HTMLElement): void {
+    // A dimming backdrop that closes the sheet when tapped.
+    this.backdrop = document.createElement('div');
+    this.backdrop.className = 'menu-backdrop';
+    this.backdrop.style.display = 'none';
+    this.backdrop.addEventListener('click', () => this.closeSheet());
+    root.appendChild(this.backdrop);
+
     this.sheet = document.createElement('div');
     this.sheet.className = 'build-sheet';
     this.sheet.style.display = 'none';
-    this.sheet.appendChild(this.popover);
     root.appendChild(this.sheet);
 
     this.buildToggle = document.createElement('button');
-    this.buildToggle.className = 'build-btn';
+    this.buildToggle.className = 'build-btn dock-btn';
     this.buildToggle.textContent = '🏗 Build';
     this.buildToggle.addEventListener('click', () => this.toggleGroup('build'));
 
     this.manageToggle = document.createElement('button');
-    this.manageToggle.className = 'build-btn';
+    this.manageToggle.className = 'build-btn dock-btn';
     this.manageToggle.textContent = '⚙ Manage';
     this.manageToggle.addEventListener('click', () => this.toggleGroup('manage'));
+
+    this.viewButton.classList.add('dock-btn');
 
     root.appendChild(this.buildToggle);
     root.appendChild(this.manageToggle);
@@ -180,17 +190,14 @@ export class BuildMenu {
       this.closeSheet();
       return;
     }
-    this.hidePopover();
-    this.openGroup = group;
     this.populateSheet(group);
   }
 
   private populateSheet(group: 'build' | 'manage'): void {
     if (!this.sheet) return;
-    // Keep the (hidden) popover node in the sheet; clear the rest.
-    for (const child of [...this.sheet.children]) {
-      if (child !== this.popover) this.sheet.removeChild(child);
-    }
+    this.openGroup = group;
+    this.sheet.innerHTML = '';
+    this.sheet.appendChild(this.sheetHeader(group === 'build' ? 'Build' : 'Manage'));
     if (group === 'build') {
       for (const type of BUILD_ORDER) this.sheet.appendChild(this.buttons.get(type)!);
     } else {
@@ -200,15 +207,59 @@ export class BuildMenu {
       this.sheet.appendChild(this.activityButton);
       this.sheet.appendChild(this.resetButton);
     }
-    this.sheet.style.display = 'flex';
+    this.showSheet();
     this.buildToggle?.classList.toggle('active', group === 'build');
     this.manageToggle?.classList.toggle('active', group === 'manage');
+  }
+
+  /** Mobile drill-in: replace the Build list with a subtype picker + Back. */
+  private showSubtypeSheet(type: JobFloorType): void {
+    const game = this.getGame();
+    if (!game || !this.sheet) return;
+    const gate = game.canBuild(type);
+    if (!gate.ok && gate.reason && !gate.reason.startsWith('Not enough coins')) {
+      this.toaster.show(gate.reason);
+      return;
+    }
+    this.sheet.innerHTML = '';
+    const back = document.createElement('button');
+    back.className = 'build-btn sheet-back';
+    back.innerHTML = '‹ Build';
+    back.addEventListener('click', () => this.populateSheet('build'));
+    this.sheet.appendChild(back);
+    this.sheet.appendChild(this.sheetHeader(FLOOR_CONFIG[type].label));
+    for (const profile of BUSINESS_SUBTYPES[type]) {
+      const cost = game.tower.nextFloorCost(type, profile.subtype);
+      const btn = document.createElement('button');
+      btn.className = 'build-btn subtype-btn';
+      btn.innerHTML = `${profile.label}<span class="cost">${cost} coins</span>`;
+      btn.disabled = game.economy.coins < cost;
+      btn.addEventListener('click', () => this.buildSubtype(type, profile.subtype));
+      this.sheet.appendChild(btn);
+    }
+    this.showSheet();
+  }
+
+  private sheetHeader(label: string): HTMLDivElement {
+    const h = document.createElement('div');
+    h.className = 'sheet-header';
+    h.textContent = label;
+    return h;
+  }
+
+  private showSheet(): void {
+    if (!this.sheet) return;
+    this.sheet.style.display = 'flex';
+    if (this.backdrop) this.backdrop.style.display = 'block';
+    document.body.classList.add('menu-sheet-open');
   }
 
   private closeSheet(): void {
     this.hidePopover();
     this.openGroup = null;
     if (this.sheet) this.sheet.style.display = 'none';
+    if (this.backdrop) this.backdrop.style.display = 'none';
+    document.body.classList.remove('menu-sheet-open');
     this.buildToggle?.classList.remove('active');
     this.manageToggle?.classList.remove('active');
   }
@@ -219,7 +270,7 @@ export class BuildMenu {
     if (this.mobile) this.closeSheet();
   }
 
-  // ---- subtype picker --------------------------------------------------
+  // ---- desktop subtype popover ----------------------------------------
 
   private togglePopover(type: JobFloorType): void {
     if (this.popoverType === type) {
@@ -229,8 +280,8 @@ export class BuildMenu {
     const game = this.getGame();
     if (!game) return;
     const gate = game.canBuild(type);
-    // Zone gates and population gates are shown on the button; surface the
-    // reason on tap rather than opening an empty subtype picker.
+    // Zone/population gates are shown on the button; surface the reason on tap
+    // rather than opening an empty subtype picker.
     if (!gate.ok && gate.reason && !gate.reason.startsWith('Not enough coins')) {
       this.toaster.show(gate.reason);
       return;
@@ -321,11 +372,16 @@ export class BuildMenu {
       }
     }
 
-    this.viewButton.textContent = inTowerView ? '🏙 Town view' : '🏢 Tower view';
+    // The View toggle stays short on mobile so three buttons fit one row.
+    if (this.mobile) {
+      this.viewButton.textContent = inTowerView ? '🏙 Town' : '🏢 Tower';
+    } else {
+      this.viewButton.textContent = inTowerView ? '🏙 Town view' : '🏢 Tower view';
+    }
     this.missionsButton.innerHTML = `🎯 Missions<span class="cost">${completedMissions}/${totalMissions}</span>`;
 
-    // Mobile: Build toggle needs a focused tower; Manage stays available for
-    // the town-wide actions (missions, activity) even in town view.
+    // Mobile: Build needs a focused tower; Manage stays available for the
+    // town-wide actions (missions, activity) even in town view.
     if (this.mobile && this.buildToggle) {
       this.buildToggle.disabled = disabledAll;
       if (disabledAll && this.openGroup === 'build') this.closeSheet();
