@@ -45,9 +45,9 @@ needed after the first visit.
   fortune add a second shaft on the far side. Riders pick the shaft that will
   actually arrive first, and commuters leave home early enough to make their
   shift.
-- **Grow the town**: unlock new lots along the street and raise more towers.
-  Commute time scales with real distance between towers, so where you put the
-  jobs matters.
+- **Grow the town**: unlock up to nine more lots along the street (ten in all)
+  and raise a whole skyline of towers. Commute time scales with real distance
+  between towers, so where you put the jobs matters.
 - **Zone every new lot**: when you buy a lot you pick a municipal zone —
   Mixed-Use, Residential, Commercial, Office, Industrial, Transit-Oriented, or
   Open Space (a park) — and from then on you can only build *to code* there.

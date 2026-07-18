@@ -412,9 +412,9 @@ export const TOWN = {
   /** Additional commute minutes per world-unit of distance between plots. */
   commuteMinutesPerUnit: 1.1,
   /** Purchase cost per slot index (slot 0 is the free starting tower). */
-  slotCosts: [0, 2500, 8000, 20000],
+  slotCosts: [0, 2500, 8000, 20000, 40000, 70000, 115000, 175000, 260000, 380000],
   /** Town-wide population required per slot index. */
-  slotUnlockPop: [0, 12, 30, 60],
+  slotUnlockPop: [0, 12, 30, 60, 100, 150, 210, 280, 360, 450],
 };
 
 /** Offline catch-up tuning. */

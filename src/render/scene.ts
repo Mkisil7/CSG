@@ -37,16 +37,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
 
   const scene = new THREE.Scene();
   scene.background = SKY_DAY.clone();
-  scene.fog = new THREE.Fog(SKY_DAY.clone(), 90, 240);
+  scene.fog = new THREE.Fog(SKY_DAY.clone(), 170, 470);
 
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
   camera.position.set(18, 14, 34);
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.minDistance = 10;
-  controls.maxDistance = 150;
+  controls.maxDistance = 280; // pull back far enough to survey a wide town
   controls.maxPolarAngle = Math.PI / 2 - 0.05;
   controls.target.set(0, FLOOR_HEIGHT * 2, 0);
   // Touch: one-finger orbit, two-finger dolly+pan (three.js defaults, made explicit).
@@ -58,6 +58,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   const sun = new THREE.DirectionalLight(SUN_DAY, 1.6);
   sun.position.set(35, 50, 30);
   sun.castShadow = true;
+  // The shadow frustum follows the focused tower (see focusSunOn) so distant
+  // towers still cast crisp shadows without a giant, low-res shadow map.
+  sun.target.position.set(0, 0, 0);
+  scene.add(sun.target);
   const shadowSize = IS_COARSE_POINTER ? 1024 : 2048;
   sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.camera.left = -90;
@@ -112,8 +116,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
 }
 
 function addGround(scene: THREE.Scene): void {
+  // Size the ground to comfortably cover the whole (now wider) row of lots.
+  const townHalfWidth = Math.max(...TOWER_SLOT_ORIGINS.map((o) => Math.abs(o.x)));
+  const groundRadius = Math.max(110, townHalfWidth + 75);
   const ground = new THREE.Mesh(
-    new THREE.CylinderGeometry(110, 110, 1, 56),
+    new THREE.CylinderGeometry(groundRadius, groundRadius, 1, 64),
     new THREE.MeshLambertMaterial({ color: 0xa9d9a0 }),
   );
   ground.position.y = -0.5;
@@ -130,15 +137,17 @@ function addGround(scene: THREE.Scene): void {
   street.receiveShadow = true;
   scene.add(street);
 
-  // A scattering of pastel trees for charm, kept clear of the tower row.
+  // A scattering of pastel trees for charm, spread across the town's width but
+  // kept clear of the tower row (z near 0).
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0xb08968 });
   const leafColors = [0x8fd694, 0x7cc98f, 0xa2e0a0];
-  for (let i = 0; i < 36; i++) {
-    const angle = (i / 36) * Math.PI * 2 + Math.sin(i * 7.3) * 0.4;
-    const radius = 30 + ((i * 13.7) % 60);
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
-    if (Math.abs(z) < 14) continue; // keep the whole tower row and street clear
+  const treeCount = Math.round(36 * (groundRadius / 110));
+  for (let i = 0; i < treeCount; i++) {
+    // Deterministic pseudo-random spread over the plot, avoiding the row.
+    const x = ((i * 53.13) % (townHalfWidth * 2 + 60)) - (townHalfWidth + 30);
+    const zSide = i % 2 === 0 ? 1 : -1;
+    const z = zSide * (18 + ((i * 17.7) % (groundRadius * 0.6)));
+    if (Math.hypot(x, z) > groundRadius - 6) continue; // stay on the disk
 
     const tree = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 1.2, 6), trunkMat);
@@ -223,10 +232,19 @@ function towerFitDistance(camera: THREE.PerspectiveCamera): number {
   return Math.min(120, Math.max(16, fitWidth / 2 / Math.tan(hHalf)));
 }
 
+/** Slide the sun (and its shadow frustum) to centre on a world-x. */
+function focusSunOn(ctx: SceneContext, x: number): void {
+  ctx.sun.position.set(x + 35, 50, 30);
+  ctx.sun.target.position.set(x, 0, 0);
+  ctx.sun.target.updateMatrixWorld();
+}
+
 /** Enter the locked, scroll-only view of one tower. */
 export function enterTowerLock(ctx: SceneContext, slotIndex: number, floorCount: number): void {
-  towerLock = { origin: TOWER_SLOT_ORIGINS[slotIndex] };
+  const origin = TOWER_SLOT_ORIGINS[slotIndex];
+  towerLock = { origin };
   ctx.controls.enabled = false;
+  focusSunOn(ctx, origin.x);
   // Start looking at the lower-middle of the tower.
   towerScrollY = Math.min(floorCount * FLOOR_HEIGHT, FLOOR_HEIGHT * 2.2);
 }
@@ -235,6 +253,8 @@ export function enterTowerLock(ctx: SceneContext, slotIndex: number, floorCount:
 export function exitTowerLock(ctx: SceneContext, unlockedSlotIndices: number[]): void {
   towerLock = null;
   ctx.controls.enabled = true;
+  const xs = unlockedSlotIndices.map((i) => TOWER_SLOT_ORIGINS[i].x);
+  focusSunOn(ctx, xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0);
   focusTown(ctx, unlockedSlotIndices);
 }
 

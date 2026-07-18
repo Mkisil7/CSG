@@ -223,7 +223,7 @@ function buildExtraMissions(): MissionDef[] {
     add(`day-income-${n}`, `Big Earner ${kfmt(n)}`, `Earn ${kfmt(n)} coins in one day`, 200 + i * 110, (t) => t.economy.incomeToday >= n, 'daily'),
   );
   // Towers owned.
-  [4, 5, 6, 7].forEach((n, i) =>
+  [4, 5, 6, 7, 8, 9, 10].forEach((n, i) =>
     add(`towers-${n}`, `Skyline ${n}`, `Own ${n} towers`, 500 + i * 200, (t) => t.towers().length >= n),
   );
   // Tallest tower.
