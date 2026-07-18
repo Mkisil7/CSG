@@ -7,6 +7,9 @@ import { staffedBusinessLevels, updateBusinessDay, resetBusinessDay } from './bu
 import { updateHappinessAndEvict } from './happiness';
 import { Missions } from './missions';
 
+/** How many recent events the Activity feed retains. */
+const ACTIVITY_LOG_MAX = 200;
+
 export interface TownSlot {
   id: string;
   unlocked: boolean;
@@ -31,6 +34,12 @@ export class Town {
 
   /** Events emitted during the last tick, for UI toasts. */
   events: GameEvent[] = [];
+
+  /**
+   * Rolling feed of recent events (newest last), the source for the Activity
+   * panel. Not persisted — it's a live feed, not save data.
+   */
+  activityLog: GameEvent[] = [];
 
   constructor() {
     this.slots = TOWN.slotCosts.map((_, i) => ({
@@ -137,6 +146,13 @@ export class Town {
     assignJobs(this.contexts(), this.day);
     this.economy.accrue(dt, this.contexts());
     this.events.push(...this.missions.checkInstant(this));
+
+    // Append this tick's events to the rolling Activity feed (bounded).
+    if (this.events.length > 0) {
+      this.activityLog.push(...this.events);
+      const overflow = this.activityLog.length - ACTIVITY_LOG_MAX;
+      if (overflow > 0) this.activityLog.splice(0, overflow);
+    }
   }
 
   /**

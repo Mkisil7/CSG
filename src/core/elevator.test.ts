@@ -109,4 +109,26 @@ describe('ElevatorSystem', () => {
     const fastTime = runUntil(fast, (a) => a.length >= 1).elapsed;
     expect(fastTime).toBeLessThan(slowTime);
   });
+
+  it('applyTier raises rider capacity, so a higher tier carries more per trip', () => {
+    const base = new ElevatorSystem(1);
+    const big = new ElevatorSystem(1);
+    big.applyTier({ speed: ELEVATOR.speed, doorTime: ELEVATOR.doorTime, capacity: ELEVATOR.capacity + 4 });
+    expect(big.capacity).toBe(ELEVATOR.capacity + 4);
+
+    const total = ELEVATOR.capacity + 4;
+    for (const el of [base, big]) {
+      for (let i = 0; i < total; i++) el.request(`r${i}`, 0, 2, 0);
+    }
+    // The big car fits everyone in its first load; the base car cannot.
+    const baseTime = runUntil(base, (a) => a.length >= total, 500).elapsed;
+    const bigTime = runUntil(big, (a) => a.length >= total, 500).elapsed;
+    expect(bigTime).toBeLessThan(baseTime);
+  });
+
+  it('applyTier without a capacity field leaves capacity unchanged', () => {
+    const el = new ElevatorSystem(1);
+    el.applyTier({ speed: 1, doorTime: 1 });
+    expect(el.capacity).toBe(ELEVATOR.capacity);
+  });
 });

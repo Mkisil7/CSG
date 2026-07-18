@@ -6,13 +6,18 @@ export class Hud {
   private readonly root: HTMLElement;
   private chips: Record<string, HTMLElement> = {};
 
-  constructor(root: HTMLElement) {
+  constructor(root: HTMLElement, onHappinessClick?: () => void) {
     this.root = root;
     for (const key of ['coins', 'population', 'happiness', 'clock', 'income', 'wait']) {
       const chip = document.createElement('div');
       chip.className = 'hud-chip';
       this.root.appendChild(chip);
       this.chips[key] = chip;
+    }
+    if (onHappinessClick) {
+      const chip = this.chips.happiness;
+      chip.classList.add('hud-chip-clickable');
+      chip.addEventListener('click', onHappinessClick);
     }
   }
 

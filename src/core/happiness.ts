@@ -1,5 +1,6 @@
 import { FLOOR_CONFIG, HAPPINESS, Resident } from './types';
 import { Game, GameEvent } from './game';
+import type { Town } from './town';
 import { commuteMinutesBetween } from './townLayout';
 import { averageBusinessQuality } from './business';
 
@@ -157,4 +158,93 @@ export function worstFactor(
 export function averageHappiness(residents: Resident[]): number {
   if (residents.length === 0) return 100;
   return residents.reduce((s, r) => s + r.happiness, 0) / residents.length;
+}
+
+export interface HappinessBreakdown {
+  average: number;
+  residentCount: number;
+  /** The four needs, averaged town-wide (0-100, higher is better). */
+  needs: { label: string; value: number }[];
+  /** Environmental happiness penalties, averaged (points subtracted). */
+  penalties: { label: string; value: number }[];
+  /** Average business-vibrancy adjustment (can be negative). */
+  vibrancy: number;
+}
+
+/**
+ * Read-only, town-wide happiness diagnostic for the UI: averages each resident's
+ * four needs and recomputes the same environmental penalties used in the
+ * happiness score, so the player can see exactly what's dragging the mood down.
+ * Does not mutate any state.
+ */
+export function happinessBreakdown(town: Town): HappinessBreakdown {
+  const residents = town.allResidents();
+  const n = residents.length;
+  const emptyNeeds = [
+    { label: 'Housing', value: 0 },
+    { label: 'Employment', value: 0 },
+    { label: 'Food', value: 0 },
+    { label: 'Entertainment', value: 0 },
+  ];
+  if (n === 0) {
+    return {
+      average: 100,
+      residentCount: 0,
+      needs: emptyNeeds,
+      penalties: [
+        { label: 'Lift queues', value: 0 },
+        { label: 'Long commutes', value: 0 },
+      ],
+      vibrancy: 0,
+    };
+  }
+
+  const avg = (sel: (r: Resident) => number) =>
+    residents.reduce((s, r) => s + sel(r), 0) / n;
+
+  const byId = new Map(town.towers().map((g) => [g.id, g]));
+  let waitSum = 0;
+  let commuteSum = 0;
+  let vibSum = 0;
+  for (const resident of residents) {
+    const homeGame = byId.get(resident.homeTowerId);
+    if (!homeGame) continue;
+    waitSum += clamp(
+      (homeGame.averageWait() - HAPPINESS.comfortableWaitMinutes) * HAPPINESS.waitPenaltyPerMinute,
+      0,
+      HAPPINESS.maxWaitPenalty,
+    );
+    const commutes =
+      resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId;
+    commuteSum += commutes
+      ? clamp(
+          (commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId!) -
+            HAPPINESS.comfortableCommuteMinutes) *
+            HAPPINESS.commutePenaltyPerMinute,
+          0,
+          HAPPINESS.maxCommutePenalty,
+        )
+      : 0;
+    vibSum += clamp(
+      ((averageBusinessQuality(homeGame.tower) - 50) / 50) * HAPPINESS.vibrancyWeight,
+      -HAPPINESS.vibrancyWeight,
+      HAPPINESS.vibrancyWeight,
+    );
+  }
+
+  return {
+    average: averageHappiness(residents),
+    residentCount: n,
+    needs: [
+      { label: 'Housing', value: avg((r) => r.needs.housing) },
+      { label: 'Employment', value: avg((r) => r.needs.employment) },
+      { label: 'Food', value: avg((r) => r.needs.food) },
+      { label: 'Entertainment', value: avg((r) => r.needs.entertainment) },
+    ],
+    penalties: [
+      { label: 'Lift queues', value: waitSum / n },
+      { label: 'Long commutes', value: commuteSum / n },
+    ],
+    vibrancy: vibSum / n,
+  };
 }

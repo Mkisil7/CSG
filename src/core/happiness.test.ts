@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { spendingMultiplier, updateHappinessAndEvict, worstFactor } from './happiness';
+import {
+  happinessBreakdown,
+  spendingMultiplier,
+  updateHappinessAndEvict,
+  worstFactor,
+} from './happiness';
 import { Game } from './game';
+import { Town } from './town';
 import { Economy } from './economy';
 import { createResident } from './residents';
 import { HAPPINESS, Resident } from './types';
@@ -126,5 +132,35 @@ describe('helpers', () => {
       needs: { housing: 90, employment: 80, food: 5, entertainment: 60 },
     });
     expect(worstFactor(r)).toBe('nowhere good to eat');
+  });
+});
+
+describe('happinessBreakdown', () => {
+  it('reports a neutral breakdown when there are no residents', () => {
+    const town = new Town();
+    const b = happinessBreakdown(town);
+    expect(b.residentCount).toBe(0);
+    expect(b.average).toBe(100);
+    expect(b.needs.map((n) => n.label)).toEqual(['Housing', 'Employment', 'Food', 'Entertainment']);
+  });
+
+  it('averages the four needs across residents', () => {
+    const town = new Town();
+    const t0 = town.slots[0].game!;
+    t0.tower.addFloor('residential');
+    const a = createResident(1, 't0');
+    a.needs = { housing: 100, employment: 40, food: 60, entertainment: 20 };
+    const b = createResident(1, 't0');
+    b.needs = { housing: 80, employment: 60, food: 40, entertainment: 60 };
+    t0.residents.push(a, b);
+
+    const bd = happinessBreakdown(town);
+    expect(bd.residentCount).toBe(2);
+    const byLabel = Object.fromEntries(bd.needs.map((n) => [n.label, n.value]));
+    expect(byLabel.Housing).toBeCloseTo(90, 5);
+    expect(byLabel.Employment).toBeCloseTo(50, 5);
+    expect(byLabel.Food).toBeCloseTo(50, 5);
+    expect(byLabel.Entertainment).toBeCloseTo(40, 5);
+    expect(bd.penalties.map((p) => p.label)).toEqual(['Lift queues', 'Long commutes']);
   });
 });

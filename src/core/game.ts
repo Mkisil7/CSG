@@ -14,9 +14,37 @@ import { commuteMinutesBetween } from './townLayout';
 import { pickBusinessFloor, qualityIncomeMultiplier, subtypeProfile } from './business';
 import { spendingMultiplier } from './happiness';
 
+export type GameEventKind =
+  | 'visit'
+  | 'move-in'
+  | 'move-out'
+  | 'hire'
+  | 'promotion'
+  | 'job-switch'
+  | 'build'
+  | 'mission';
+
 export interface GameEvent {
-  kind: 'visit' | 'move-in' | 'move-out' | 'hire' | 'promotion' | 'job-switch' | 'build' | 'mission';
+  kind: GameEventKind;
   message: string;
+}
+
+/**
+ * Which events are rare/notable enough to interrupt with a floating toast.
+ * Routine, high-frequency events (shop/restaurant visits, hires) only go to
+ * the Activity log so the screen stays clean — especially on mobile.
+ */
+const TOAST_WORTHY: ReadonlySet<GameEventKind> = new Set<GameEventKind>([
+  'move-in',
+  'move-out',
+  'promotion',
+  'job-switch',
+  'build',
+  'mission',
+]);
+
+export function isToastWorthy(kind: GameEventKind): boolean {
+  return TOAST_WORTHY.has(kind);
 }
 
 export interface Departure {

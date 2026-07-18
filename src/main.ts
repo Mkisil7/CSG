@@ -1,6 +1,6 @@
 import { GAME_MINUTES_PER_SECOND, OFFLINE } from './core/types';
 import { Town } from './core/town';
-import { Game } from './core/game';
+import { Game, isToastWorthy } from './core/game';
 import { loadGame, saveGame, clearSave } from './core/save';
 import { offlineGameMinutes, runOfflineCatchup } from './core/offline';
 import {
@@ -93,7 +93,9 @@ function setFocus(slotIndex: number | null): void {
 
 // ---- UI ---------------------------------------------------------------------
 
-const hud = new Hud(document.getElementById('hud')!);
+const hud = new Hud(document.getElementById('hud')!, () =>
+  inspector.select({ kind: 'happiness' }),
+);
 const toaster = new Toaster(document.getElementById('toast')!);
 const speedControl = new SpeedControl(document.getElementById('speed-control')!);
 
@@ -121,6 +123,7 @@ const buildMenu = new BuildMenu(
   onChanged,
   () => setFocus(focusedSlot === null ? 0 : null),
   () => inspector.select({ kind: 'missions' }),
+  () => inspector.select({ kind: 'activity' }),
   () => {
     clearSave();
     location.reload();
@@ -175,7 +178,11 @@ function frame(now: number): void {
 
   // Speed control scales (or pauses) simulation; rendering always runs.
   town.tick(realDt * GAME_MINUTES_PER_SECOND * speedControl.effectiveMultiplier);
-  for (const event of town.events) toaster.show(event.message);
+  // Routine events (visits, hires) go only to the Activity log; rare notable
+  // events still pop a toast so they don't bury the screen — especially mobile.
+  for (const event of town.events) {
+    if (isToastWorthy(event.kind)) toaster.show(event.message);
+  }
 
   ensureBundles();
   for (const bundle of bundles.values()) {

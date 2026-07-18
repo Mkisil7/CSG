@@ -48,6 +48,8 @@ export class ElevatorSystem {
   speed = ELEVATOR.speed;
   /** Current door/load time per stop, game minutes (upgradable via applyTier). */
   doorTime = ELEVATOR.doorTime;
+  /** Riders one car can hold at once (upgradable via applyTier). */
+  capacity = ELEVATOR.capacity;
 
   /** Rolling average wait, game minutes. */
   private waitSamples: number[] = [];
@@ -56,10 +58,11 @@ export class ElevatorSystem {
     for (let i = 0; i < carCount; i++) this.addCar();
   }
 
-  /** Apply a purchased speed tier (affects travel speed and door time). */
-  applyTier(tier: { speed: number; doorTime: number }): void {
+  /** Apply a purchased speed tier (affects travel speed, door time, capacity). */
+  applyTier(tier: { speed: number; doorTime: number; capacity?: number }): void {
     this.speed = tier.speed;
     this.doorTime = tier.doorTime;
+    if (tier.capacity !== undefined) this.capacity = tier.capacity;
   }
 
   addCar(): void {
@@ -190,7 +193,7 @@ export class ElevatorSystem {
 
     const queue = this.queues.get(floor);
     if (queue) {
-      while (queue.length > 0 && car.riders.length < ELEVATOR.capacity) {
+      while (queue.length > 0 && car.riders.length < this.capacity) {
         const rider = queue.shift()!;
         car.riders.push(rider);
         result.boardings.push({ residentId: rider.residentId });

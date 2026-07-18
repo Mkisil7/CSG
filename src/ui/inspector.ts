@@ -3,7 +3,8 @@ import { Resident, FLOOR_CONFIG, TOWN } from '../core/types';
 import { jobTitle } from '../core/careers';
 import { MAX_FLOOR_NAME_LENGTH } from '../core/floorNames';
 import { assignedStaff, businessGrade, isJobFloorType, subtypeProfile } from '../core/business';
-import { worstFactor } from '../core/happiness';
+import { worstFactor, happinessBreakdown } from '../core/happiness';
+import { GameEventKind } from '../core/game';
 import { MISSION_DEFS } from '../core/missions';
 
 export type Selection =
@@ -11,6 +12,8 @@ export type Selection =
   | { kind: 'resident'; residentId: string }
   | { kind: 'slot'; index: number }
   | { kind: 'missions' }
+  | { kind: 'activity' }
+  | { kind: 'happiness' }
   | null;
 
 /**
@@ -79,6 +82,61 @@ export class Inspector {
         <div class="insp-title">Missions</div>
         <div class="insp-sub">${town.missions.completedCount}/${MISSION_DEFS.length} complete</div>
         ${rows}`;
+    }
+
+    if (sel.kind === 'activity') {
+      const recent = town.activityLog.slice(-40).reverse();
+      const rows =
+        recent.length > 0
+          ? recent
+              .map(
+                (e) =>
+                  `<div class="insp-row">${eventIcon(e.kind)} ${escapeHtml(e.message)}</div>`,
+              )
+              .join('')
+          : `<div class="insp-row insp-empty">Nothing has happened yet</div>`;
+      return `
+        <button class="insp-close" id="insp-close">×</button>
+        <div class="insp-title">Activity</div>
+        <div class="insp-sub">Recent goings-on around town</div>
+        ${rows}`;
+    }
+
+    if (sel.kind === 'happiness') {
+      const b = happinessBreakdown(town);
+      if (b.residentCount === 0) {
+        return `
+          <button class="insp-close" id="insp-close">×</button>
+          <div class="insp-title">Happiness</div>
+          <div class="insp-sub">No residents yet</div>
+          <div class="insp-row insp-empty">Build apartments to attract residents</div>`;
+      }
+      const needBars = b.needs
+        .map((n) => bar(n.label, n.value, n.value >= 60 ? '#6fae3d' : n.value >= 35 ? '#c9a227' : '#c94f4f'))
+        .join('');
+      const penaltyRows = b.penalties
+        .filter((p) => p.value > 0.05)
+        .map(
+          (p) =>
+            `<div class="insp-row">⚠️ ${escapeHtml(p.label)}: <b class="grade-F">−${p.value.toFixed(0)}</b></div>`,
+        )
+        .join('');
+      const vibrancyRow =
+        Math.abs(b.vibrancy) >= 0.05
+          ? `<div class="insp-row">${b.vibrancy >= 0 ? '✨' : '🥀'} Business vibrancy: <b class="${b.vibrancy >= 0 ? 'grade-A' : 'grade-F'}">${b.vibrancy >= 0 ? '+' : ''}${b.vibrancy.toFixed(0)}</b></div>`
+          : '';
+      const worst = b.needs.reduce((a, c) => (c.value < a.value ? c : a));
+      return `
+        <button class="insp-close" id="insp-close">×</button>
+        <div class="insp-title">Happiness ${Math.round(b.average)}/100</div>
+        <div class="insp-sub">Averaged across ${b.residentCount} resident${b.residentCount === 1 ? '' : 's'}</div>
+        <div class="insp-section">Needs (higher is better)</div>
+        ${needBars}
+        ${penaltyRows || vibrancyRow ? '<div class="insp-section">Environment</div>' : ''}
+        ${vibrancyRow}
+        ${penaltyRows || '<div class="insp-row insp-empty">No lift or commute strain</div>'}
+        <div class="insp-section">Biggest drag</div>
+        <div class="insp-row">${worst.value >= 75 ? '😊 Everyone is pretty content' : `Lowest need: <b>${escapeHtml(worst.label)}</b> — ${lowNeedHint(worst.label)}`}</div>`;
     }
 
     if (sel.kind === 'floor') {
@@ -238,4 +296,50 @@ function listSection(title: string, items: string[], empty: string): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** A labelled horizontal meter, value 0-100. */
+function bar(label: string, value: number, color: string): string {
+  const pct = Math.max(0, Math.min(100, value));
+  return `<div class="insp-bar-row">
+      <span class="insp-bar-label">${escapeHtml(label)}</span>
+      <span class="insp-bar-track"><span class="insp-bar-fill" style="width:${pct}%;background:${color}"></span></span>
+      <span class="insp-bar-val">${Math.round(pct)}</span>
+    </div>`;
+}
+
+function eventIcon(kind: GameEventKind): string {
+  switch (kind) {
+    case 'visit':
+      return '🛍️';
+    case 'move-in':
+      return '🎉';
+    case 'move-out':
+      return '📦';
+    case 'hire':
+      return '🧑‍💼';
+    case 'promotion':
+      return '⬆️';
+    case 'job-switch':
+      return '🔀';
+    case 'build':
+      return '🏗️';
+    case 'mission':
+      return '🎯';
+  }
+}
+
+function lowNeedHint(label: string): string {
+  switch (label) {
+    case 'Housing':
+      return 'apartments are crowded; build more residential floors';
+    case 'Employment':
+      return 'people lack good jobs; add shops, offices, or factories';
+    case 'Food':
+      return 'not enough places to eat; build restaurants';
+    case 'Entertainment':
+      return 'nothing to do; add shops and bars';
+    default:
+      return 'invest here to lift the town’s mood';
+  }
 }

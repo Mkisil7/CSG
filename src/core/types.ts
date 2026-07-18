@@ -220,12 +220,16 @@ export const ELEVATOR = {
 /** How strongly an existing queue at a floor counts against a shaft's pickup ETA. */
 export const QUEUE_PENALTY_FACTOR = 0.5;
 
-/** Purchasable lift speed tiers; index 0 is the free starting tier. */
-export const ELEVATOR_TIERS: { cost: number; speed: number; doorTime: number }[] = [
-  { cost: 0, speed: 0.34, doorTime: 2 },
-  { cost: 300, speed: 0.5, doorTime: 1.6 },
-  { cost: 800, speed: 0.72, doorTime: 1.2 },
-  { cost: 2000, speed: 1.05, doorTime: 0.8 },
+/**
+ * Purchasable lift speed tiers; index 0 is the free starting tier. Each tier
+ * also raises the car's rider capacity, so upgrading eases congestion directly
+ * (real relief without needing extra shaft geometry).
+ */
+export const ELEVATOR_TIERS: { cost: number; speed: number; doorTime: number; capacity: number }[] = [
+  { cost: 0, speed: 0.34, doorTime: 2, capacity: 6 },
+  { cost: 300, speed: 0.5, doorTime: 1.6, capacity: 8 },
+  { cost: 800, speed: 0.72, doorTime: 1.2, capacity: 11 },
+  { cost: 2000, speed: 1.05, doorTime: 0.8, capacity: 15 },
 ];
 
 /** One-time unlock for a second, independent lift shaft on the far side. */

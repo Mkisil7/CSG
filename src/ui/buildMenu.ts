@@ -8,6 +8,7 @@ import {
   SECOND_SHAFT,
 } from '../core/types';
 import { Game } from '../core/game';
+import { IS_COARSE_POINTER } from '../render/scene';
 import { Toaster } from './hud';
 
 type BuildableType = Exclude<FloorType, 'lobby'>;
@@ -15,8 +16,11 @@ type BuildableType = Exclude<FloorType, 'lobby'>;
 const BUILD_ORDER: BuildableType[] = ['residential', 'shop', 'restaurant', 'office'];
 
 /**
- * Bottom build bar. Floor and lift actions apply to the currently focused
- * tower; business floor types open a subtype picker before building.
+ * Bottom build bar. On desktop it's a flat row of buttons. On touch / narrow
+ * screens it collapses into a compact bar — [🏗 Build] [⚙ Manage] [View] — where
+ * Build and Manage open a sheet above the bar, so the controls no longer eat
+ * half the screen. Floor and lift actions apply to the currently focused tower;
+ * business floor types open a subtype picker before building.
  */
 export class BuildMenu {
   private buttons = new Map<BuildableType, HTMLButtonElement>();
@@ -24,9 +28,17 @@ export class BuildMenu {
   private shaftButton: HTMLButtonElement;
   private viewButton: HTMLButtonElement;
   private missionsButton: HTMLButtonElement;
+  private activityButton: HTMLButtonElement;
   private resetButton: HTMLButtonElement;
   private popover: HTMLDivElement;
   private popoverType: JobFloorType | null = null;
+
+  // Mobile grouping.
+  private readonly mobile = IS_COARSE_POINTER;
+  private sheet: HTMLDivElement | null = null;
+  private buildToggle: HTMLButtonElement | null = null;
+  private manageToggle: HTMLButtonElement | null = null;
+  private openGroup: 'build' | 'manage' | null = null;
 
   constructor(
     root: HTMLElement,
@@ -35,12 +47,12 @@ export class BuildMenu {
     private readonly onChange: () => void,
     onToggleView: () => void,
     onShowMissions: () => void,
+    onShowActivity: () => void,
     onReset: () => void,
   ) {
     this.popover = document.createElement('div');
     this.popover.className = 'subtype-popover';
     this.popover.style.display = 'none';
-    root.appendChild(this.popover);
 
     for (const type of BUILD_ORDER) {
       const btn = document.createElement('button');
@@ -51,17 +63,16 @@ export class BuildMenu {
         if (type === 'residential') {
           const check = game.canBuild(type);
           if (!check.ok) {
-            toaster.show(check.reason ?? 'Cannot build');
+            this.toaster.show(check.reason ?? 'Cannot build');
             return;
           }
           game.buildFloor(type);
-          toaster.show(`Built ${FLOOR_CONFIG[type].label}!`);
-          this.onChange();
+          this.toaster.show(`Built ${FLOOR_CONFIG[type].label}!`);
+          this.afterBuild();
           return;
         }
         this.togglePopover(type);
       });
-      root.appendChild(btn);
       this.buttons.set(type, btn);
     }
 
@@ -72,14 +83,13 @@ export class BuildMenu {
       if (!game) return;
       const check = game.canUpgradeSpeed();
       if (!check.ok) {
-        toaster.show(check.reason ?? 'Cannot upgrade');
+        this.toaster.show(check.reason ?? 'Cannot upgrade');
         return;
       }
       game.upgradeSpeed();
-      toaster.show('Lift upgraded — zoom zoom!');
-      this.onChange();
+      this.toaster.show('Lift upgraded — faster and roomier!');
+      this.afterBuild();
     });
-    root.appendChild(this.speedButton);
 
     this.shaftButton = document.createElement('button');
     this.shaftButton.className = 'build-btn';
@@ -88,27 +98,36 @@ export class BuildMenu {
       if (!game) return;
       const check = game.canUnlockSecondShaft();
       if (!check.ok) {
-        toaster.show(check.reason ?? 'Cannot build');
+        this.toaster.show(check.reason ?? 'Cannot build');
         return;
       }
       game.unlockSecondShaft();
-      toaster.show('Second lift shaft installed!');
-      this.onChange();
+      this.toaster.show('Second lift shaft installed!');
+      this.afterBuild();
     });
-    root.appendChild(this.shaftButton);
 
     this.viewButton = document.createElement('button');
     this.viewButton.className = 'build-btn view-btn';
     this.viewButton.addEventListener('click', () => {
       this.hidePopover();
+      this.closeSheet();
       onToggleView();
     });
-    root.appendChild(this.viewButton);
 
     this.missionsButton = document.createElement('button');
     this.missionsButton.className = 'build-btn';
-    this.missionsButton.addEventListener('click', onShowMissions);
-    root.appendChild(this.missionsButton);
+    this.missionsButton.addEventListener('click', () => {
+      this.closeSheet();
+      onShowMissions();
+    });
+
+    this.activityButton = document.createElement('button');
+    this.activityButton.className = 'build-btn';
+    this.activityButton.textContent = '📜 Activity';
+    this.activityButton.addEventListener('click', () => {
+      this.closeSheet();
+      onShowActivity();
+    });
 
     this.resetButton = document.createElement('button');
     this.resetButton.className = 'build-btn danger';
@@ -116,8 +135,91 @@ export class BuildMenu {
     this.resetButton.addEventListener('click', () => {
       if (confirm('Start over? Your whole town will be lost.')) onReset();
     });
+
+    if (this.mobile) this.layoutMobile(root);
+    else this.layoutDesktop(root);
+  }
+
+  // ---- layouts ---------------------------------------------------------
+
+  private layoutDesktop(root: HTMLElement): void {
+    root.appendChild(this.popover);
+    for (const type of BUILD_ORDER) root.appendChild(this.buttons.get(type)!);
+    root.appendChild(this.speedButton);
+    root.appendChild(this.shaftButton);
+    root.appendChild(this.viewButton);
+    root.appendChild(this.missionsButton);
+    root.appendChild(this.activityButton);
     root.appendChild(this.resetButton);
   }
+
+  private layoutMobile(root: HTMLElement): void {
+    this.sheet = document.createElement('div');
+    this.sheet.className = 'build-sheet';
+    this.sheet.style.display = 'none';
+    this.sheet.appendChild(this.popover);
+    root.appendChild(this.sheet);
+
+    this.buildToggle = document.createElement('button');
+    this.buildToggle.className = 'build-btn';
+    this.buildToggle.textContent = '🏗 Build';
+    this.buildToggle.addEventListener('click', () => this.toggleGroup('build'));
+
+    this.manageToggle = document.createElement('button');
+    this.manageToggle.className = 'build-btn';
+    this.manageToggle.textContent = '⚙ Manage';
+    this.manageToggle.addEventListener('click', () => this.toggleGroup('manage'));
+
+    root.appendChild(this.buildToggle);
+    root.appendChild(this.manageToggle);
+    root.appendChild(this.viewButton);
+  }
+
+  private toggleGroup(group: 'build' | 'manage'): void {
+    if (this.openGroup === group) {
+      this.closeSheet();
+      return;
+    }
+    this.hidePopover();
+    this.openGroup = group;
+    this.populateSheet(group);
+  }
+
+  private populateSheet(group: 'build' | 'manage'): void {
+    if (!this.sheet) return;
+    // Keep the (hidden) popover node in the sheet; clear the rest.
+    for (const child of [...this.sheet.children]) {
+      if (child !== this.popover) this.sheet.removeChild(child);
+    }
+    if (group === 'build') {
+      for (const type of BUILD_ORDER) this.sheet.appendChild(this.buttons.get(type)!);
+    } else {
+      this.sheet.appendChild(this.speedButton);
+      this.sheet.appendChild(this.shaftButton);
+      this.sheet.appendChild(this.missionsButton);
+      this.sheet.appendChild(this.activityButton);
+      this.sheet.appendChild(this.resetButton);
+    }
+    this.sheet.style.display = 'flex';
+    this.buildToggle?.classList.toggle('active', group === 'build');
+    this.manageToggle?.classList.toggle('active', group === 'manage');
+  }
+
+  private closeSheet(): void {
+    this.hidePopover();
+    this.openGroup = null;
+    if (this.sheet) this.sheet.style.display = 'none';
+    this.buildToggle?.classList.remove('active');
+    this.manageToggle?.classList.remove('active');
+  }
+
+  /** After a successful build: refresh state; on mobile also fold the sheet away. */
+  private afterBuild(): void {
+    this.onChange();
+    if (this.mobile) this.closeSheet();
+  }
+
+  // ---- subtype picker --------------------------------------------------
 
   private togglePopover(type: JobFloorType): void {
     if (this.popoverType === type) {
@@ -127,8 +229,10 @@ export class BuildMenu {
     const game = this.getGame();
     if (!game) return;
     const gate = game.canBuild(type);
-    if (game.homePopulation < FLOOR_CONFIG[type].unlockPop) {
-      this.toaster.show(gate.reason ?? 'Locked');
+    // Zone gates and population gates are shown on the button; surface the
+    // reason on tap rather than opening an empty subtype picker.
+    if (!gate.ok && gate.reason && !gate.reason.startsWith('Not enough coins')) {
+      this.toaster.show(gate.reason);
       return;
     }
     this.popoverType = type;
@@ -151,11 +255,12 @@ export class BuildMenu {
     if (game.buildFloor(type, subtype)) {
       const label = BUSINESS_SUBTYPES[type].find((p) => p.subtype === subtype)?.label ?? type;
       this.toaster.show(`Built ${label}!`);
-      this.onChange();
+      this.hidePopover();
+      this.afterBuild();
     } else {
       this.toaster.show('Not enough coins');
+      this.hidePopover();
     }
-    this.hidePopover();
   }
 
   hidePopover(): void {
@@ -176,7 +281,14 @@ export class BuildMenu {
         continue;
       }
       const cost = game.tower.nextFloorCost(type);
+      const gate = game.canBuild(type);
       const locked = game.homePopulation < cfg.unlockPop;
+      // Permanent zoning takes priority over the temporary population gate.
+      if (gate.reason && gate.reason.startsWith('Not zoned')) {
+        btn.innerHTML = `${cfg.label}<span class="cost">🚫 ${gate.reason.replace('Not zoned for this — ', '')}</span>`;
+        btn.disabled = true;
+        continue;
+      }
       btn.innerHTML = locked
         ? `${cfg.label}<span class="cost">🔒 ${cfg.unlockPop} residents</span>`
         : `${cfg.label}<span class="cost">${type === 'residential' ? `${cost} coins` : 'choose type…'}</span>`;
@@ -211,5 +323,12 @@ export class BuildMenu {
 
     this.viewButton.textContent = inTowerView ? '🏙 Town view' : '🏢 Tower view';
     this.missionsButton.innerHTML = `🎯 Missions<span class="cost">${completedMissions}/${totalMissions}</span>`;
+
+    // Mobile: Build toggle needs a focused tower; Manage stays available for
+    // the town-wide actions (missions, activity) even in town view.
+    if (this.mobile && this.buildToggle) {
+      this.buildToggle.disabled = disabledAll;
+      if (disabledAll && this.openGroup === 'build') this.closeSheet();
+    }
   }
 }

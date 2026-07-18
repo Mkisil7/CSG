@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Town } from './town';
-import { Game } from './game';
-import { TOWN, Resident } from './types';
+import { Game, isToastWorthy } from './game';
+import { MOVE_IN_INTERVAL, TOWN, Resident } from './types';
 import { createResident } from './residents';
 
 /** Force-open a second tower for tests without paying/gating. */
@@ -81,5 +81,32 @@ describe('Town', () => {
     t1.residents.push(away);
     expect(town.homeResidentsOf('t0')).toContain(away);
     expect(town.homeResidentsOf('t1')).not.toContain(away);
+  });
+
+  it('routes tick events into the bounded activity log', () => {
+    const town = new Town();
+    town.slots[0].game!.tower.addFloor('residential');
+    town.moveInTimer = MOVE_IN_INTERVAL; // force a move-in this tick
+    town.tick(1);
+    expect(town.activityLog.some((e) => e.kind === 'move-in')).toBe(true);
+
+    // The log never exceeds its cap even under a flood of synthetic events.
+    for (let i = 0; i < 500; i++) {
+      town.activityLog.push({ kind: 'visit', message: `spam ${i}` });
+    }
+    // A tick trims to the cap.
+    town.moveInTimer = MOVE_IN_INTERVAL;
+    town.tick(1);
+    expect(town.activityLog.length).toBeLessThanOrEqual(200);
+  });
+
+  it('classifies routine events as log-only and rare ones as toast-worthy', () => {
+    expect(isToastWorthy('visit')).toBe(false);
+    expect(isToastWorthy('hire')).toBe(false);
+    expect(isToastWorthy('move-in')).toBe(true);
+    expect(isToastWorthy('move-out')).toBe(true);
+    expect(isToastWorthy('promotion')).toBe(true);
+    expect(isToastWorthy('build')).toBe(true);
+    expect(isToastWorthy('mission')).toBe(true);
   });
 });
