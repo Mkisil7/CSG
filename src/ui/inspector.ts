@@ -1,5 +1,5 @@
 import { Town } from '../core/town';
-import { Resident, FLOOR_CONFIG, TOWN } from '../core/types';
+import { Resident, FLOOR_CONFIG, TOWN, ZONE_CONFIGS, ZoneType, SELECTABLE_ZONES } from '../core/types';
 import { jobTitle } from '../core/careers';
 import { MAX_FLOOR_NAME_LENGTH } from '../core/floorNames';
 import { assignedStaff, businessGrade, isJobFloorType, subtypeProfile } from '../core/business';
@@ -24,6 +24,8 @@ export type Selection =
 export class Inspector {
   private selection: Selection = null;
   private lastRender = '';
+  /** Zone the player has tentatively selected in the lot-purchase picker. */
+  private zoneChoice: ZoneType = 'mixed';
 
   constructor(
     private readonly root: HTMLElement,
@@ -36,6 +38,7 @@ export class Inspector {
   select(selection: Selection): void {
     this.selection = selection;
     this.lastRender = '';
+    if (selection?.kind === 'slot') this.zoneChoice = 'mixed';
     this.refresh(true);
   }
 
@@ -176,10 +179,12 @@ export class Inspector {
           ? `<div class="insp-title">${escapeHtml(floor.name)}</div>`
           : `<input id="insp-rename" maxlength="${MAX_FLOOR_NAME_LENGTH}" value="${escapeHtml(floor.name)}" />`;
 
+      const zoneCfg = ZONE_CONFIGS[game.zone];
+      const zoneNote = game.zone === 'mixed' ? '' : ` · ${zoneCfg.badge} ${zoneCfg.label}`;
       return `
         <button class="insp-close" id="insp-close">×</button>
         ${rename}
-        <div class="insp-sub">${floorTypeLabel(floor.type)} · Floor ${sel.level}</div>
+        <div class="insp-sub">${floorTypeLabel(floor.type)} · Floor ${sel.level}${zoneNote}</div>
         ${body}`;
     }
 
@@ -212,18 +217,42 @@ export class Inspector {
         }</div>`;
     }
 
-    // Slot purchase panel.
+    // Slot panel: an unlocked park shows read-only info; a locked lot shows the
+    // zone picker + purchase.
     const slot = town.slots[sel.index];
-    if (!slot || slot.unlocked) return null;
-    const check = town.canUnlockSlot(sel.index);
+    if (!slot) return null;
+    if (slot.unlocked) {
+      if (slot.game) return null; // a real tower — focus handles it, not this panel
+      const cfg = ZONE_CONFIGS[slot.zone];
+      return `
+        <button class="insp-close" id="insp-close">×</button>
+        <div class="insp-title">${cfg.badge} ${escapeHtml(cfg.label)}</div>
+        <div class="insp-sub">Open space</div>
+        <div class="insp-row">${escapeHtml(cfg.description)}</div>
+        <div class="insp-row">🌳 Lifts the mood of residents in nearby towers.</div>`;
+    }
+
+    const chosen = ZONE_CONFIGS[this.zoneChoice];
+    const zoneRows = SELECTABLE_ZONES.map((z) => {
+      const zc = ZONE_CONFIGS[z];
+      const cost = town.slotCost(sel.index, z);
+      const active = z === this.zoneChoice;
+      return `<button class="build-btn zone-opt${active ? ' active' : ''}" data-zone="${z}">
+          ${zc.badge} ${escapeHtml(zc.label)}<span class="cost">${cost} coins</span>
+        </button>`;
+    }).join('');
+    const check = town.canUnlockSlot(sel.index, this.zoneChoice);
+    const cost = town.slotCost(sel.index, this.zoneChoice);
     return `
       <button class="insp-close" id="insp-close">×</button>
       <div class="insp-title">Empty lot</div>
-      <div class="insp-sub">A new tower could rise here</div>
-      <div class="insp-row">Cost: ${TOWN.slotCosts[sel.index]} coins</div>
+      <div class="insp-sub">Zone it, then build to code</div>
       <div class="insp-row">Requires ${TOWN.slotUnlockPop[sel.index]} town residents</div>
+      <div class="insp-section">Choose a zone</div>
+      <div class="zone-list">${zoneRows}</div>
+      <div class="insp-row insp-empty">${escapeHtml(chosen.description)}</div>
       <button class="build-btn insp-buy" id="insp-buy" ${check.ok ? '' : 'disabled'}>
-        ${check.ok ? 'Break ground!' : (check.reason ?? 'Locked')}
+        ${check.ok ? `${chosen.badge} Zone as ${escapeHtml(chosen.label)} · ${cost}` : (check.reason ?? 'Locked')}
       </button>`;
   }
 
@@ -245,11 +274,21 @@ export class Inspector {
       rename.addEventListener('blur', commit);
     }
 
-    const buy = document.getElementById('insp-buy');
-    if (buy && this.selection?.kind === 'slot') {
+    if (this.selection?.kind === 'slot') {
       const index = this.selection.index;
-      buy.addEventListener('click', () => {
-        if (this.getTown().unlockSlot(index)) {
+      for (const opt of Array.from(this.root.querySelectorAll('.zone-opt'))) {
+        opt.addEventListener('click', () => {
+          const zone = (opt as HTMLElement).dataset.zone as ZoneType | undefined;
+          if (zone) {
+            this.zoneChoice = zone;
+            this.lastRender = '';
+            this.refresh(true);
+          }
+        });
+      }
+      const buy = document.getElementById('insp-buy');
+      buy?.addEventListener('click', () => {
+        if (this.getTown().unlockSlot(index, this.zoneChoice)) {
           this.onChanged();
           this.select(null);
         }

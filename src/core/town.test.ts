@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Town } from './town';
 import { Game, isToastWorthy } from './game';
-import { MOVE_IN_INTERVAL, TOWN, Resident } from './types';
+import { MOVE_IN_INTERVAL, TOWN, ZONE_CONFIGS, Resident } from './types';
 import { createResident } from './residents';
 
 /** Force-open a second tower for tests without paying/gating. */
@@ -108,5 +108,63 @@ describe('Town', () => {
     expect(isToastWorthy('promotion')).toBe(true);
     expect(isToastWorthy('build')).toBe(true);
     expect(isToastWorthy('mission')).toBe(true);
+  });
+
+  it('zones a purchased lot and applies the zone cost multiplier', () => {
+    const town = new Town();
+    town.economy.coins = 1_000_000;
+    town.slots[0].game!.tower.addFloor('residential');
+    for (let i = 0; i < TOWN.slotUnlockPop[1]; i++) placeResident(town, 't0');
+
+    const before = town.economy.coins;
+    expect(town.unlockSlot(1, 'industrial')).toBe(true);
+    expect(town.slots[1].zone).toBe('industrial');
+    expect(town.slots[1].game).not.toBeNull();
+    expect(town.slots[1].game!.zone).toBe('industrial');
+    const expectedCost = Math.round(TOWN.slotCosts[1] * ZONE_CONFIGS.industrial.costMultiplier);
+    expect(before - town.economy.coins).toBe(expectedCost);
+  });
+
+  it('a park lot is unlocked but holds no tower, and registers a park origin', () => {
+    const town = new Town();
+    town.economy.coins = 1_000_000;
+    town.slots[0].game!.tower.addFloor('residential');
+    for (let i = 0; i < TOWN.slotUnlockPop[1]; i++) placeResident(town, 't0');
+
+    expect(town.unlockSlot(1, 'park')).toBe(true);
+    expect(town.slots[1].unlocked).toBe(true);
+    expect(town.slots[1].game).toBeNull();
+    expect(town.towers()).toHaveLength(1); // a park is not a tower
+    expect(town.parkOrigins()).toHaveLength(1);
+  });
+
+  it('runs several game days with a factory, a bar, and a park without crashing', () => {
+    const town = new Town();
+    town.economy.coins = 1_000_000;
+    const t0 = town.slots[0].game!;
+    t0.tower.addFloor('residential');
+    t0.tower.addFloor('residential');
+    t0.tower.addFloor('restaurant', 'bar');
+    t0.tower.addFloor('shop', 'electronics');
+    for (let i = 0; i < 6; i++) placeResident(town, 't0');
+
+    // A separate industrial tower and a park lot.
+    town.slots[1].unlocked = true;
+    town.slots[1].zone = 'industrial';
+    town.slots[1].game = new Game('t1', town.economy, 'industrial');
+    town.slots[1].game.tower.addFloor('factory', 'assembly');
+    town.slots[2].unlocked = true;
+    town.slots[2].zone = 'park';
+    town.slots[2].game = null;
+
+    // ~3 game days at 10-minute steps: exercises rollovers, nightlife, goods,
+    // park-proximity happiness, and cross-tower hiring all together.
+    expect(() => {
+      for (let step = 0; step < 3 * 144; step++) town.tick(10);
+    }).not.toThrow();
+
+    expect(Number.isFinite(town.economy.coins)).toBe(true);
+    expect(town.day).toBeGreaterThanOrEqual(3);
+    expect(town.activityLog.length).toBeGreaterThan(0);
   });
 });

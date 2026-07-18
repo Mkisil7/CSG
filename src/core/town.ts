@@ -1,4 +1,11 @@
-import { MINUTES_PER_DAY, MOVE_IN_INTERVAL, Resident, TOWN } from './types';
+import {
+  MINUTES_PER_DAY,
+  MOVE_IN_INTERVAL,
+  Resident,
+  TOWN,
+  ZONE_CONFIGS,
+  ZoneType,
+} from './types';
 import { Game, GameEvent } from './game';
 import { Economy } from './economy';
 import { createResident, resetDailyFlags } from './residents';
@@ -6,6 +13,7 @@ import { assignJobs, processPromotions, TowerContext } from './careers';
 import { staffedBusinessLevels, updateBusinessDay, resetBusinessDay } from './business';
 import { updateHappinessAndEvict } from './happiness';
 import { Missions } from './missions';
+import { TOWER_SLOT_ORIGINS } from './townLayout';
 
 /** How many recent events the Activity feed retains. */
 const ACTIVITY_LOG_MAX = 200;
@@ -13,6 +21,9 @@ const ACTIVITY_LOG_MAX = 200;
 export interface TownSlot {
   id: string;
   unlocked: boolean;
+  /** Municipal zone chosen at unlock; 'mixed' by default (and for the free lot). */
+  zone: ZoneType;
+  /** The tower simulation, or null for a park lot (which holds no tower). */
   game: Game | null;
 }
 
@@ -45,7 +56,8 @@ export class Town {
     this.slots = TOWN.slotCosts.map((_, i) => ({
       id: `t${i}`,
       unlocked: i === 0,
-      game: i === 0 ? new Game('t0', this.economy) : null,
+      zone: 'mixed' as ZoneType,
+      game: i === 0 ? new Game('t0', this.economy, 'mixed') : null,
     }));
   }
 
@@ -64,6 +76,13 @@ export class Town {
 
   towerById(id: string): Game | null {
     return this.towers().find((g) => g.id === id) ?? null;
+  }
+
+  /** World-space origins of every unlocked park lot (for park-proximity happiness). */
+  parkOrigins(): { x: number; z: number }[] {
+    return this.slots.flatMap((s, i) =>
+      s.unlocked && ZONE_CONFIGS[s.zone].isPark ? [TOWER_SLOT_ORIGINS[i]] : [],
+    );
   }
 
   private contexts(): TowerContext[] {
@@ -86,25 +105,37 @@ export class Town {
 
   // ---- tower slot purchase ---------------------------------------------
 
-  canUnlockSlot(index: number): { ok: boolean; reason?: string } {
+  /** Purchase cost of a lot at a given zone (zone multiplier applied). */
+  slotCost(index: number, zone: ZoneType = 'mixed'): number {
+    return Math.round(TOWN.slotCosts[index] * ZONE_CONFIGS[zone].costMultiplier);
+  }
+
+  canUnlockSlot(index: number, zone: ZoneType = 'mixed'): { ok: boolean; reason?: string } {
     const slot = this.slots[index];
     if (!slot || slot.unlocked) return { ok: false, reason: 'Not available' };
     if (this.population < TOWN.slotUnlockPop[index]) {
       return { ok: false, reason: `Needs ${TOWN.slotUnlockPop[index]} town residents` };
     }
-    if (this.economy.coins < TOWN.slotCosts[index]) {
+    if (this.economy.coins < this.slotCost(index, zone)) {
       return { ok: false, reason: 'Not enough coins' };
     }
     return { ok: true };
   }
 
-  unlockSlot(index: number): boolean {
-    if (!this.canUnlockSlot(index).ok) return false;
+  unlockSlot(index: number, zone: ZoneType = 'mixed'): boolean {
+    if (!this.canUnlockSlot(index, zone).ok) return false;
     const slot = this.slots[index];
-    this.economy.spend(TOWN.slotCosts[index]);
+    this.economy.spend(this.slotCost(index, zone));
     slot.unlocked = true;
-    slot.game = new Game(slot.id, this.economy);
-    this.events.push({ kind: 'build', message: 'Broke ground on a new tower!' });
+    slot.zone = zone;
+    if (ZONE_CONFIGS[zone].isPark) {
+      // A park holds no tower — it beautifies the block for nearby residents.
+      slot.game = null;
+      this.events.push({ kind: 'build', message: 'Opened a new park! 🌳' });
+    } else {
+      slot.game = new Game(slot.id, this.economy, zone);
+      this.events.push({ kind: 'build', message: 'Broke ground on a new tower!' });
+    }
     return true;
   }
 
@@ -169,7 +200,7 @@ export class Town {
     }
     this.events.push(...processPromotions(this.contexts(), this.day));
     updateBusinessDay(this.contexts(), this.economy);
-    this.events.push(...updateHappinessAndEvict(games, this.day));
+    this.events.push(...updateHappinessAndEvict(games, this.day, this.parkOrigins()));
     this.events.push(...this.missions.checkDaily(this));
     resetBusinessDay(this.contexts());
     resetDailyFlags(this.allResidents());

@@ -36,6 +36,25 @@ Free to play, no install, no ads, no in-app purchases. Saves locally in your bro
 - **Grow the town**: unlock new lots along the street and raise more towers.
   Commute time scales with real distance between towers, so where you put the
   jobs matters.
+- **Zone every new lot**: when you buy a lot you pick a municipal zone —
+  Mixed-Use, Residential, Commercial, Office, Industrial, Transit-Oriented, or
+  Open Space (a park) — and from then on you can only build *to code* there.
+  Zoning is permanent, so plan the block. Your starting tower is Mixed-Use, and
+  any town you built before zoning existed stays Mixed-Use, so nothing you
+  already have becomes illegal.
+- **Industry & supply chains**: Industrial lots host **Factories** (a new floor
+  type with its own Line Worker → Foreman career). Staffed factories produce
+  goods that give a quality boost to Commercial shops town-wide — electronics
+  shops benefit most.
+- **Parks**: an Open-Space lot builds no tower but lifts the mood of residents
+  in nearby towers, and its lamp posts glow after dark.
+- **Nightlife**: build a Bar & Lounge (a Commercial restaurant) and residents
+  head out in the evening, so the town stays alive after the shops close —
+  and every window lights up warm at night.
+- **See what's wrong**: tap the Happiness meter for a breakdown of what's
+  dragging the mood down (housing, jobs, food, entertainment, lift queues,
+  commutes). Routine goings-on collect in an **Activity** feed instead of
+  burying the screen in pop-ups.
 - **Missions**: a checklist of milestones with coin rewards (🎯 in the menu).
 - **Speed controls**: pause / 1× / 2× / 4× (top right). Come back later and
   get a "while you were away" report — the town keeps living without you (up
@@ -68,7 +87,7 @@ src/
     elevator.ts   # per-shaft cab simulation: queueing, capacity, dispatch
     economy.ts    # traffic-driven income (visits, wages, rent)
     residents.ts  # daily-schedule "brain" incl. cross-tower commuting
-  render/    # Three.js dollhouse cross-sections: floors, people, cabs, plots
+  render/    # Three.js dollhouse cross-sections: floors, people, cabs, plots, parks
   input/     # raycast picking that coexists with the orbit camera
   ui/        # DOM overlay: HUD, build menu, inspector, toasts
   main.ts    # game loop wiring it all together

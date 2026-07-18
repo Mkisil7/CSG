@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   happinessBreakdown,
+  parkProximityBonus,
   spendingMultiplier,
   updateHappinessAndEvict,
   worstFactor,
@@ -11,6 +12,7 @@ import { Economy } from './economy';
 import { createResident } from './residents';
 import { HAPPINESS, Resident } from './types';
 import { staffedBusinessLevels } from './business';
+import { TOWER_SLOT_ORIGINS } from './townLayout';
 
 /** A game with a residential floor and (optionally) staffed shop+restaurant. */
 function makeGame(id: string, withAmenities: boolean): Game {
@@ -132,6 +134,49 @@ describe('helpers', () => {
       needs: { housing: 90, employment: 80, food: 5, entertainment: 60 },
     });
     expect(worstFactor(r)).toBe('nowhere good to eat');
+  });
+});
+
+describe('nightlife, parks, and transit', () => {
+  it('a bar visit (didNightlife) refills the entertainment need', () => {
+    const game = new Game('t0', new Economy(1000));
+    game.tower.addFloor('residential');
+    game.tower.addFloor('restaurant', 'bar');
+    // Staff the bar so the town "has entertainment" and the need can decay.
+    const barStaff = addResident(game, { jobTowerId: 't0', jobFloor: 2 });
+    void barStaff;
+    const partier = addResident(game, {
+      didNightlife: true,
+      needs: { housing: 100, employment: 100, food: 100, entertainment: 10 },
+    });
+    refreshStaffing(game);
+    updateHappinessAndEvict([game], 2);
+    expect(partier.needs.entertainment).toBe(100);
+  });
+
+  it('park proximity bonus is strongest adjacent and zero far away', () => {
+    const adjacent = parkProximityBonus('t0', [TOWER_SLOT_ORIGINS[1]]);
+    const twoAway = parkProximityBonus('t0', [TOWER_SLOT_ORIGINS[2]]);
+    expect(adjacent).toBeGreaterThan(0);
+    expect(twoAway).toBe(0);
+    expect(parkProximityBonus('t0', [])).toBe(0);
+    expect(adjacent).toBeGreaterThan(twoAway);
+  });
+
+  it('transit-oriented zoning softens the commute happiness penalty', () => {
+    function commuterHappiness(homeZone: 'mixed' | 'transit'): number {
+      const home = new Game('t0', new Economy(1000), homeZone);
+      home.tower.addFloor('residential');
+      const job = new Game('t2', new Economy(1000), 'mixed');
+      job.tower.addFloor('office');
+      const r = createResident(1, 't0');
+      r.jobTowerId = 't2';
+      r.jobFloor = 1;
+      home.residents.push(r);
+      updateHappinessAndEvict([home, job], 2);
+      return r.happiness;
+    }
+    expect(commuterHappiness('transit')).toBeGreaterThan(commuterHappiness('mixed'));
   });
 });
 

@@ -13,7 +13,7 @@ import { Toaster } from './hud';
 
 type BuildableType = Exclude<FloorType, 'lobby'>;
 
-const BUILD_ORDER: BuildableType[] = ['residential', 'shop', 'restaurant', 'office'];
+const BUILD_ORDER: BuildableType[] = ['residential', 'shop', 'restaurant', 'office', 'factory'];
 
 /**
  * Bottom build bar. On desktop it's a flat row of buttons. On touch / narrow

@@ -84,4 +84,36 @@ describe('save/load round trip (v3)', () => {
   it('returns null when no save exists', () => {
     expect(loadGame(mockStorage())).toBeNull();
   });
+
+  it('round-trips zones, a factory floor, and a park lot (v4)', () => {
+    const town = new Town();
+    town.economy.coins = 1_000_000;
+
+    town.slots[1].unlocked = true;
+    town.slots[1].zone = 'industrial';
+    town.slots[1].game = new Game('t1', town.economy, 'industrial');
+    town.slots[1].game.tower.addFloor('factory', 'electronics-fab');
+
+    town.slots[2].unlocked = true;
+    town.slots[2].zone = 'park';
+    town.slots[2].game = null;
+
+    const storage = mockStorage();
+    saveGame(town, storage);
+    const loaded = loadGame(storage)!.town;
+
+    expect(loaded.slots[1].zone).toBe('industrial');
+    expect(loaded.slots[1].game!.zone).toBe('industrial');
+    expect(loaded.slots[1].game!.tower.floors[1].type).toBe('factory');
+    expect(loaded.slots[1].game!.tower.floors[1].subtype).toBe('electronics-fab');
+    expect(loaded.slots[2].zone).toBe('park');
+    expect(loaded.slots[2].game).toBeNull();
+    expect(loaded.towers()).toHaveLength(2); // t0 + t1; the park is not a tower
+  });
+
+  it('drops a legacy (pre-v4) save', () => {
+    const storage = mockStorage();
+    storage.setItem('tower-town-save-v4', JSON.stringify({ version: 3, towers: [] }));
+    expect(loadGame(storage)).toBeNull();
+  });
 });

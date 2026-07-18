@@ -1,9 +1,11 @@
-export type FloorType = 'lobby' | 'residential' | 'shop' | 'restaurant' | 'office';
+export type FloorType = 'lobby' | 'residential' | 'shop' | 'restaurant' | 'office' | 'factory';
 
 export type ShopSubtype = 'grocery' | 'boutique' | 'electronics';
-export type RestaurantSubtype = 'coffee' | 'fastfood' | 'fine-dining';
+/** 'bar' is the nightlife subtype — residents visit it in the evening. */
+export type RestaurantSubtype = 'coffee' | 'fastfood' | 'fine-dining' | 'bar';
 export type OfficeSubtype = 'tech' | 'law' | 'creative';
-export type BusinessSubtype = ShopSubtype | RestaurantSubtype | OfficeSubtype;
+export type FactorySubtype = 'assembly' | 'foodproc' | 'electronics-fab';
+export type BusinessSubtype = ShopSubtype | RestaurantSubtype | OfficeSubtype | FactorySubtype;
 
 export interface Floor {
   /** Index in the stack; lobby is always 0. */
@@ -72,6 +74,8 @@ export interface Resident {
   workEnd: number;
   didLunch: boolean;
   didShop: boolean;
+  /** Went out to a bar/lounge this evening (separate from didShop). */
+  didNightlife: boolean;
   state: ResidentState;
   /** The activity a resident is travelling toward, applied on elevator arrival. */
   pendingActivity?: { activity: Activity; duration: number };
@@ -92,12 +96,15 @@ export const FLOOR_CONFIG: Record<
   shop: { label: 'Shop', baseCost: 120, jobs: 2, homes: 0, unlockPop: 2 },
   restaurant: { label: 'Restaurant', baseCost: 150, jobs: 3, homes: 0, unlockPop: 4 },
   office: { label: 'Office', baseCost: 200, jobs: 4, homes: 0, unlockPop: 8 },
+  // Factories employ workers who commute in, so they gate on 0 home-pop —
+  // an industrial-zoned tower has no apartments of its own.
+  factory: { label: 'Factory', baseCost: 180, jobs: 4, homes: 0, unlockPop: 0 },
 };
 
 /** Cost multiplier applied per existing floor, so the tower gets pricier as it rises. */
 export const FLOOR_COST_GROWTH = 1.18;
 
-export type JobFloorType = 'shop' | 'restaurant' | 'office';
+export type JobFloorType = 'shop' | 'restaurant' | 'office' | 'factory';
 
 export interface JobTierConfig {
   title: string;
@@ -123,6 +130,10 @@ export const JOB_TIERS: Record<JobFloorType, JobTierConfig[]> = {
     { title: 'Associate', payMultiplier: 1.5, slots: 1, tenureDaysToPromote: 3 },
     { title: 'Manager', payMultiplier: 2.2, slots: 1, tenureDaysToPromote: Infinity },
   ],
+  factory: [
+    { title: 'Line Worker', payMultiplier: 1, slots: 3, tenureDaysToPromote: 3 },
+    { title: 'Foreman', payMultiplier: 1.8, slots: 1, tenureDaysToPromote: Infinity },
+  ],
 };
 
 /** Consecutive blocked days before a resident will jump ship for a promotion elsewhere. */
@@ -132,7 +143,10 @@ export const ECONOMY = {
   startingCoins: 300,
   rentPerResidentPerDay: 40,
   /** Base wage per worker-day by floor type; multiplied by the job tier's payMultiplier. */
-  baseWagePerWorkerDay: { shop: 40, restaurant: 45, office: 60 } as Record<JobFloorType, number>,
+  baseWagePerWorkerDay: { shop: 40, restaurant: 45, office: 60, factory: 55 } as Record<
+    JobFloorType,
+    number
+  >,
   shopVisitIncome: 8,
   restaurantVisitIncome: 6,
 };
@@ -151,6 +165,12 @@ export const BUSINESS = {
   qualityIncomeMaxMult: 1.4,
   /** Weight boost when a business subtype matches one of a resident's traits. */
   traitAppealBoost: 1.5,
+  /** Goods produced per staffed factory worker per day (supply side). */
+  goodsPerFactoryWorkerDay: 10,
+  /** Goods a shop wants per day per unit of its goodsAffinity (demand side). */
+  goodsTargetPerShop: 15,
+  /** Max quality-target bonus a fully-supplied, high-affinity shop gets. */
+  goodsBonusWeight: 12,
 };
 
 export interface BusinessProfile {
@@ -160,23 +180,33 @@ export interface BusinessProfile {
   /** Multiplier on per-visit income for this subtype. */
   incomeMultiplier: number;
   appealTags: Trait[];
+  /** Shops only: how strongly this shop benefits from factory-supplied goods. */
+  goodsAffinity?: number;
+  /** Factories only: relative goods output multiplier. */
+  goodsSupply?: number;
 }
 
 export const BUSINESS_SUBTYPES: Record<JobFloorType, BusinessProfile[]> = {
   shop: [
-    { subtype: 'grocery', label: 'Grocery Store', costMultiplier: 1.0, incomeMultiplier: 1.0, appealTags: ['practical'] },
-    { subtype: 'boutique', label: 'Clothing Boutique', costMultiplier: 1.15, incomeMultiplier: 1.2, appealTags: ['trendy'] },
-    { subtype: 'electronics', label: 'Electronics Shop', costMultiplier: 1.3, incomeMultiplier: 1.4, appealTags: ['techie'] },
+    { subtype: 'grocery', label: 'Grocery Store', costMultiplier: 1.0, incomeMultiplier: 1.0, appealTags: ['practical'], goodsAffinity: 0.4 },
+    { subtype: 'boutique', label: 'Clothing Boutique', costMultiplier: 1.15, incomeMultiplier: 1.2, appealTags: ['trendy'], goodsAffinity: 0.7 },
+    { subtype: 'electronics', label: 'Electronics Shop', costMultiplier: 1.3, incomeMultiplier: 1.4, appealTags: ['techie'], goodsAffinity: 1.0 },
   ],
   restaurant: [
     { subtype: 'coffee', label: 'Coffee Shop', costMultiplier: 1.0, incomeMultiplier: 0.9, appealTags: ['social'] },
     { subtype: 'fastfood', label: 'Fast Food', costMultiplier: 1.1, incomeMultiplier: 1.0, appealTags: ['practical'] },
     { subtype: 'fine-dining', label: 'Fine Dining', costMultiplier: 1.4, incomeMultiplier: 1.6, appealTags: ['foodie'] },
+    { subtype: 'bar', label: 'Bar & Lounge', costMultiplier: 1.25, incomeMultiplier: 1.3, appealTags: ['social', 'trendy'] },
   ],
   office: [
     { subtype: 'creative', label: 'Creative Studio', costMultiplier: 1.0, incomeMultiplier: 1.0, appealTags: ['trendy'] },
     { subtype: 'tech', label: 'Technology Office', costMultiplier: 1.2, incomeMultiplier: 1.0, appealTags: ['techie'] },
     { subtype: 'law', label: 'Law Firm', costMultiplier: 1.4, incomeMultiplier: 1.0, appealTags: ['ambitious'] },
+  ],
+  factory: [
+    { subtype: 'assembly', label: 'Assembly Plant', costMultiplier: 1.0, incomeMultiplier: 1.0, appealTags: ['practical'], goodsSupply: 1.0 },
+    { subtype: 'foodproc', label: 'Food Processing', costMultiplier: 1.1, incomeMultiplier: 1.0, appealTags: ['practical'], goodsSupply: 1.1 },
+    { subtype: 'electronics-fab', label: 'Electronics Fab', costMultiplier: 1.4, incomeMultiplier: 1.0, appealTags: ['techie'], goodsSupply: 1.4 },
   ],
 };
 
@@ -207,6 +237,24 @@ export const HAPPINESS = {
   spendingSwingMax: 0.3,
   moveOutThreshold: 35,
   moveOutAfterDays: 5,
+  /** Max happiness bonus for living right next to a park. */
+  parkProximityBonus: 8,
+  /** World-distance at which the park bonus fades to zero (≈ two lots away). */
+  parkFalloffDistance: 68,
+  /** Transit-oriented zones: gentler commute penalty (higher threshold, lower slope). */
+  transitComfortableCommuteMinutes: 60,
+  transitCommutePenaltyPerMinute: 0.15,
+};
+
+/** Evening nightlife window: when and how likely residents go out to a bar. */
+export const NIGHTLIFE = {
+  startMinute: 19 * 60, // 19:00
+  endMinute: 23 * 60, // 23:00
+  visitDuration: 45,
+  /** Base chance per evening replan that a resident heads out. */
+  baseChance: 0.3,
+  /** Additional chance scaled by how depleted their entertainment need is (0-1). */
+  needChanceWeight: 0.45,
 };
 
 export const ELEVATOR = {
@@ -234,6 +282,103 @@ export const ELEVATOR_TIERS: { cost: number; speed: number; doorTime: number; ca
 
 /** One-time unlock for a second, independent lift shaft on the far side. */
 export const SECOND_SHAFT = { cost: 1500, unlockPop: 10 };
+
+/**
+ * Municipal zoning. Each town lot is zoned once when unlocked; the zone
+ * permanently constrains which floor types may be built there ("build to
+ * code"). Condensed from real-world code families to the ~7 that each carry a
+ * distinct gameplay lever. `mixed` is the unrestricted default every existing
+ * save falls back to, so zoning never retroactively breaks a built tower.
+ */
+export type ZoneType =
+  | 'mixed'
+  | 'residential'
+  | 'commercial'
+  | 'office'
+  | 'industrial'
+  | 'park'
+  | 'transit';
+
+export interface ZoneConfig {
+  label: string;
+  /** Blurb naming the real-world code families this stands in for. */
+  description: string;
+  /** Permitted floor types; null = unrestricted. Lobby is always allowed. */
+  allowedFloorTypes: Exclude<FloorType, 'lobby'>[] | null;
+  /** Multiplier on the lot purchase cost. */
+  costMultiplier: number;
+  /** Open-space lot that holds no tower (a park). */
+  isPark?: boolean;
+  /** Transit-oriented: residents here get gentler commute-happiness penalties. */
+  isTransit?: boolean;
+  /** Short emoji badge for the HUD/menu. */
+  badge: string;
+}
+
+export const ZONE_CONFIGS: Record<ZoneType, ZoneConfig> = {
+  mixed: {
+    label: 'Mixed-Use',
+    description: 'MU / MXD — anything goes: homes, shops, dining, offices, industry.',
+    allowedFloorTypes: null,
+    costMultiplier: 1.0,
+    badge: '🏙',
+  },
+  residential: {
+    label: 'Residential',
+    description: 'R-1…RM — apartments only. Quiet neighbourhoods.',
+    allowedFloorTypes: ['residential'],
+    costMultiplier: 0.9,
+    badge: '🏠',
+  },
+  commercial: {
+    label: 'Commercial',
+    description: 'C-1 / C-2 / CBD — shops, restaurants, and nightlife.',
+    allowedFloorTypes: ['shop', 'restaurant'],
+    costMultiplier: 1.1,
+    badge: '🛍',
+  },
+  office: {
+    label: 'Office',
+    description: 'O / OP — workplaces and professional services.',
+    allowedFloorTypes: ['office'],
+    costMultiplier: 1.15,
+    badge: '🏢',
+  },
+  industrial: {
+    label: 'Industrial',
+    description: 'I-1 / I-2 — factories that supply goods to shops town-wide.',
+    allowedFloorTypes: ['factory'],
+    costMultiplier: 0.8,
+    badge: '🏭',
+  },
+  park: {
+    label: 'Open Space',
+    description: 'OS / PR — a park. No buildings, but lifts the mood of nearby towers.',
+    allowedFloorTypes: [],
+    costMultiplier: 0.3,
+    isPark: true,
+    badge: '🌳',
+  },
+  transit: {
+    label: 'Transit-Oriented',
+    description: 'TOD — dense mixed-use by transit; commutes feel shorter here.',
+    allowedFloorTypes: null,
+    costMultiplier: 1.25,
+    isTransit: true,
+    badge: '🚉',
+  },
+};
+
+/** Zones a player may assign to a freshly-purchased lot (starting lot is always mixed). */
+export const SELECTABLE_ZONES: ZoneType[] = [
+  'mixed',
+  'residential',
+  'commercial',
+  'office',
+  'industrial',
+  'transit',
+  'park',
+];
 
 /** Town-level config: fixed tower footprints and street-level commuting. */
 export const TOWN = {

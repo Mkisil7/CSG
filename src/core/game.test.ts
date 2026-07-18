@@ -34,3 +34,31 @@ describe('averageWait pooling', () => {
     expect(game.averageWait()).toBeCloseTo(20, 5); // still 20, not halved
   });
 });
+
+describe('zone build gating', () => {
+  it('mixed zone (the default) allows every floor type', () => {
+    const g = new Game('t0', new Economy(100000), 'mixed');
+    g.homePopulation = 100;
+    for (const t of ['residential', 'shop', 'restaurant', 'office', 'factory'] as const) {
+      expect(g.canBuild(t).ok).toBe(true);
+    }
+  });
+
+  it('a residential zone rejects non-residential floors with a clear reason', () => {
+    const g = new Game('t0', new Economy(100000), 'residential');
+    g.homePopulation = 100;
+    expect(g.canBuild('residential').ok).toBe(true);
+    const shop = g.canBuild('shop');
+    expect(shop.ok).toBe(false);
+    expect(shop.reason).toContain('Not zoned');
+  });
+
+  it('an industrial zone allows factories but not shops; buildFloor honours it', () => {
+    const g = new Game('t0', new Economy(100000), 'industrial');
+    g.homePopulation = 100;
+    expect(g.canBuild('factory').ok).toBe(true);
+    expect(g.canBuild('shop').ok).toBe(false);
+    expect(g.buildFloor('shop')).toBe(false); // gate blocks the actual build
+    expect(g.buildFloor('factory')).toBe(true);
+  });
+});

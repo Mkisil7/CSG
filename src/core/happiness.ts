@@ -1,7 +1,7 @@
 import { FLOOR_CONFIG, HAPPINESS, Resident } from './types';
 import { Game, GameEvent } from './game';
 import type { Town } from './town';
-import { commuteMinutesBetween } from './townLayout';
+import { commuteMinutesBetween, slotIndexOfTowerId, TOWER_SLOT_ORIGINS } from './townLayout';
 import { averageBusinessQuality } from './business';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -13,7 +13,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * Must run BEFORE resetDailyFlags (it reads didLunch/didShop) and after the
  * business quality update (it reads fresh quality for the vibrancy bonus).
  */
-export function updateHappinessAndEvict(games: Game[], currentDay: number): GameEvent[] {
+export function updateHappinessAndEvict(
+  games: Game[],
+  currentDay: number,
+  parkOrigins: { x: number; z: number }[] = [],
+): GameEvent[] {
   const events: GameEvent[] = [];
   const all = games.flatMap((g) => g.residents);
   const byId = new Map(games.map((g) => [g.id, g]));
@@ -26,6 +30,13 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
   const townHasShop = games.some((g) =>
     g.tower.floors.some((f) => f.type === 'shop' && g.staffedLevels.has(f.level)),
   );
+  // Bars refill the entertainment need too, so their presence enables its decay.
+  const townHasBar = games.some((g) =>
+    g.tower.floors.some(
+      (f) => f.type === 'restaurant' && f.subtype === 'bar' && g.staffedLevels.has(f.level),
+    ),
+  );
+  const townHasEntertainment = townHasShop || townHasBar;
 
   const evictions: { resident: Resident; reason: string }[] = [];
 
@@ -41,8 +52,8 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
     );
     resident.needs.entertainment = updateDecayingNeed(
       resident.needs.entertainment,
-      resident.didShop,
-      townHasShop ? HAPPINESS.entertainmentDecayPerDay : 0,
+      resident.didShop || resident.didNightlife,
+      townHasEntertainment ? HAPPINESS.entertainmentDecayPerDay : 0,
     );
 
     const occupants = all.filter(
@@ -69,11 +80,20 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
       HAPPINESS.maxWaitPenalty,
     );
     const commutes = resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId;
+    // Transit-oriented zoning (home or job) softens the commute penalty: a
+    // higher comfortable threshold and a gentler per-minute slope.
+    const jobGame = resident.jobTowerId ? byId.get(resident.jobTowerId) : undefined;
+    const transit = homeGame.zone === 'transit' || jobGame?.zone === 'transit';
+    const comfortableCommute = transit
+      ? HAPPINESS.transitComfortableCommuteMinutes
+      : HAPPINESS.comfortableCommuteMinutes;
+    const commuteSlope = transit
+      ? HAPPINESS.transitCommutePenaltyPerMinute
+      : HAPPINESS.commutePenaltyPerMinute;
     const commutePenalty = commutes
       ? clamp(
-          (commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId!) -
-            HAPPINESS.comfortableCommuteMinutes) *
-            HAPPINESS.commutePenaltyPerMinute,
+          (commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId!) - comfortableCommute) *
+            commuteSlope,
           0,
           HAPPINESS.maxCommutePenalty,
         )
@@ -83,6 +103,7 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
       -HAPPINESS.vibrancyWeight,
       HAPPINESS.vibrancyWeight,
     );
+    const parkBonus = parkProximityBonus(resident.homeTowerId, parkOrigins);
 
     const w = HAPPINESS.weights;
     resident.happiness = clamp(
@@ -90,7 +111,8 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
         w.employment * resident.needs.employment +
         w.food * resident.needs.food +
         w.entertainment * resident.needs.entertainment +
-        vibrancy -
+        vibrancy +
+        parkBonus -
         waitPenalty -
         commutePenalty,
       0,
@@ -129,6 +151,24 @@ export function updateHappinessAndEvict(games: Game[], currentDay: number): Game
 
 function updateDecayingNeed(current: number, refilledToday: boolean, decayPerDay: number): number {
   return refilledToday ? 100 : Math.max(0, current - decayPerDay);
+}
+
+/**
+ * Happiness bonus for living near a park, decaying linearly with distance from
+ * the resident's home tower to the nearest park lot (zero once beyond the
+ * falloff distance, ≈ two lots away). Reuses the commuting plot geometry.
+ */
+export function parkProximityBonus(
+  homeTowerId: string,
+  parkOrigins: { x: number; z: number }[],
+): number {
+  if (parkOrigins.length === 0) return 0;
+  const home = TOWER_SLOT_ORIGINS[slotIndexOfTowerId(homeTowerId)];
+  if (!home) return 0;
+  let best = Infinity;
+  for (const p of parkOrigins) best = Math.min(best, Math.hypot(p.x - home.x, p.z - home.z));
+  const scale = Math.max(0, 1 - best / HAPPINESS.parkFalloffDistance);
+  return HAPPINESS.parkProximityBonus * scale;
 }
 
 /** Multiplier on a resident's per-visit spending (happiness 50 → exactly 1.0x). */

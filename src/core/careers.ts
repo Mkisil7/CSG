@@ -20,7 +20,7 @@ export interface CareerEvent {
 }
 
 function isJobFloorType(type: string): type is JobFloorType {
-  return type === 'shop' || type === 'restaurant' || type === 'office';
+  return type === 'shop' || type === 'restaurant' || type === 'office' || type === 'factory';
 }
 
 /** All residents across every tower (residents live in their home tower's array). */

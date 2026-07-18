@@ -1,14 +1,15 @@
-import { ELEVATOR_TIERS, Floor, Resident } from './types';
+import { ELEVATOR_TIERS, Floor, Resident, ZONE_CONFIGS, ZoneType } from './types';
 import { Game } from './game';
 import { Town } from './town';
 import { ElevatorSystem } from './elevator';
 import { bumpIdCounter } from './residents';
 
-const SAVE_KEY = 'tower-town-save-v3';
+const SAVE_KEY = 'tower-town-save-v4';
 
 interface TowerSave {
   id: string;
   unlocked: boolean;
+  zone: ZoneType;
   floors: Floor[];
   elevatorTier: number;
   secondShaft: boolean;
@@ -16,7 +17,7 @@ interface TowerSave {
 }
 
 interface SaveData {
-  version: 3;
+  version: 4;
   time: number;
   coins: number;
   moveInTimer: number;
@@ -28,7 +29,7 @@ interface SaveData {
 
 export function saveGame(town: Town, storage: Storage = localStorage): void {
   const data: SaveData = {
-    version: 3,
+    version: 4,
     time: town.time,
     coins: town.economy.coins,
     moveInTimer: town.moveInTimer,
@@ -37,6 +38,7 @@ export function saveGame(town: Town, storage: Storage = localStorage): void {
     towers: town.slots.map((slot) => ({
       id: slot.id,
       unlocked: slot.unlocked,
+      zone: slot.zone,
       floors: slot.game?.tower.floors ?? [],
       elevatorTier: slot.game?.elevatorTier ?? 0,
       secondShaft: !!slot.game?.secondElevator,
@@ -67,7 +69,7 @@ export function loadGame(storage: Storage = localStorage): LoadResult | null {
 
   try {
     const data = JSON.parse(raw) as SaveData;
-    if (data.version !== 3) return null;
+    if (data.version !== 4) return null;
 
     const town = new Town();
     town.time = data.time;
@@ -82,12 +84,22 @@ export function loadGame(storage: Storage = localStorage): LoadResult | null {
       if (!saved || !saved.unlocked) {
         if (i > 0) {
           slot.unlocked = false;
+          slot.zone = 'mixed';
           slot.game = null;
         }
         continue;
       }
       slot.unlocked = true;
-      const game = slot.game ?? new Game(slot.id, town.economy);
+      slot.zone = saved.zone ?? 'mixed';
+      // A park lot holds no tower — restore it and move on.
+      if (ZONE_CONFIGS[slot.zone].isPark) {
+        slot.game = null;
+        continue;
+      }
+      const game =
+        slot.game && slot.game.zone === slot.zone
+          ? slot.game
+          : new Game(slot.id, town.economy, slot.zone);
       slot.game = game;
       game.tower.floors = saved.floors.map(repairFloor);
       game.elevatorTier = Math.min(saved.elevatorTier, ELEVATOR_TIERS.length - 1);
@@ -150,13 +162,15 @@ function repairResident(r: Resident): Resident {
     needs: r.needs ?? { housing: 100, employment: 100, food: 100, entertainment: 100 },
     happiness: r.happiness ?? 100,
     unhappyDays: r.unhappyDays ?? 0,
+    didNightlife: r.didNightlife ?? false,
   };
 }
 
 export function clearSave(storage: Storage = localStorage): void {
   try {
     storage.removeItem(SAVE_KEY);
-    storage.removeItem('tower-town-save-v2'); // clean up older saves too
+    storage.removeItem('tower-town-save-v3'); // clean up older saves too
+    storage.removeItem('tower-town-save-v2');
     storage.removeItem('tower-town-save-v1');
   } catch {
     // ignore

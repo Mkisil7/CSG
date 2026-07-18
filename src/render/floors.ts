@@ -18,6 +18,7 @@ const WALL_COLORS: Record<FloorType, number> = {
   shop: 0xc8e4f7,
   restaurant: 0xf7e3b0,
   office: 0xd6cff7,
+  factory: 0xd9d2c4,
 };
 
 const ROOM_WIDTH = ROOM_RIGHT - ROOM_LEFT;
@@ -44,6 +45,18 @@ const MAT = {
   screen: new THREE.MeshLambertMaterial({ color: 0x3f4a63 }),
   metal: new THREE.MeshLambertMaterial({ color: 0xb9c0cc }),
 };
+
+const DAY_WINDOW = new THREE.Color(0x9fc9e8);
+const NIGHT_WINDOW = new THREE.Color(0xffcf8f);
+
+/**
+ * Tint the shared window material with the day/night scalar (1 = midday,
+ * 0 = deep night). Because every floor in every tower reuses one MAT.window,
+ * this lights every window town-wide in a single per-frame assignment.
+ */
+export function setWindowGlow(daylight: number): void {
+  MAT.window.color.lerpColors(NIGHT_WINDOW, DAY_WINDOW, Math.max(0, Math.min(1, daylight)));
+}
 
 function box(
   w: number,
@@ -195,7 +208,12 @@ function buildFloorView(
   const wallMat = new THREE.MeshLambertMaterial({ color: WALL_COLORS[floor.type] });
 
   // Business floors get an open/closed sign by the front edge.
-  if (floor.type === 'shop' || floor.type === 'restaurant' || floor.type === 'office') {
+  if (
+    floor.type === 'shop' ||
+    floor.type === 'restaurant' ||
+    floor.type === 'office' ||
+    floor.type === 'factory'
+  ) {
     const signMat = new THREE.MeshLambertMaterial({ color: 0x6fcf7c });
     const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.12), signMat);
     sign.position.set(ROOM_LEFT + 0.6, y + FLOOR_HEIGHT - 0.6, ROOM_DEPTH / 2 - 0.2);
@@ -341,6 +359,23 @@ function addFurniture(view: THREE.Group, floor: Floor, y: number): void {
         view.add(box(0.45, 0.45, 0.45, MAT.fabricAlt, x, y + 0.25, zRow + 0.85));
       }
       plant(ROOM_RIGHT - 1.2, zRow);
+      break;
+    }
+    case 'factory': {
+      // A conveyor line down the middle with legs, plus stacked crates.
+      view.add(box(ROOM_WIDTH - 2, 0.16, 0.7, MAT.metal, ROOM_CENTER_X, y + 0.7, zRow));
+      for (const lx of [ROOM_LEFT + 1.6, ROOM_CENTER_X, ROOM_RIGHT - 1.6]) {
+        view.add(box(0.14, 0.7, 0.14, MAT.rail, lx, y + 0.35, zRow + 0.25));
+        view.add(box(0.14, 0.7, 0.14, MAT.rail, lx, y + 0.35, zRow - 0.25));
+      }
+      // Crates riding the line + a stack in the corner.
+      for (const [i, cx] of [ROOM_LEFT + 2.2, ROOM_CENTER_X + 0.4, ROOM_RIGHT - 2.4].entries()) {
+        view.add(box(0.5, 0.45, 0.5, i % 2 ? MAT.wood : MAT.woodDark, cx + jitter(i), y + 1.0, zRow));
+      }
+      view.add(box(0.7, 0.7, 0.7, MAT.wood, ROOM_LEFT + 1.4, y + 0.35, zRow + 1.4));
+      view.add(box(0.7, 0.7, 0.7, MAT.woodDark, ROOM_LEFT + 1.4, y + 1.05, zRow + 1.4));
+      // A machine housing at the end of the line.
+      view.add(box(1.0, 1.2, 1.0, MAT.screen, ROOM_RIGHT - 1.6, y + 0.6, zRow + 1.2));
       break;
     }
   }

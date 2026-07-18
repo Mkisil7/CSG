@@ -24,11 +24,18 @@ const OFFICE_FIRST = [
 ];
 const OFFICE_SECOND = ['& Co.', 'Group', 'Studios', 'Partners', 'Labs', 'Consulting'];
 
+const FACTORY_FIRST = [
+  'Ironworks', 'Redbrick', 'Foundry', 'Cogwheel', 'Steamline', 'Anvil', 'Gearhart',
+  'Millstone', 'Copperfield', 'Forge & Bolt',
+];
+const FACTORY_SECOND = ['Works', 'Manufacturing', 'Industries', 'Fabrication', 'Assembly', 'Mill'];
+
 const POOLS: Partial<Record<FloorType, [string[], string[]]>> = {
   residential: [RESIDENTIAL_FIRST, RESIDENTIAL_SECOND],
   shop: [SHOP_FIRST, SHOP_SECOND],
   restaurant: [RESTAURANT_FIRST, RESTAURANT_SECOND],
   office: [OFFICE_FIRST, OFFICE_SECOND],
+  factory: [FACTORY_FIRST, FACTORY_SECOND],
 };
 
 export const MAX_FLOOR_NAME_LENGTH = 30;

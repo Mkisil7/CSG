@@ -5,6 +5,8 @@ import {
   FloorType,
   Resident,
   SECOND_SHAFT,
+  ZONE_CONFIGS,
+  ZoneType,
 } from './types';
 import { Tower } from './tower';
 import { ElevatorSystem } from './elevator';
@@ -97,6 +99,9 @@ export class Game {
   constructor(
     public readonly id: string,
     public economy: Economy,
+    /** Municipal zone; constrains which floor types may be built. Default is
+     *  unrestricted mixed-use, so existing saves/tests behave unchanged. */
+    public readonly zone: ZoneType = 'mixed',
   ) {}
 
   shafts(): ElevatorSystem[] {
@@ -106,6 +111,10 @@ export class Game {
   // ---- player actions -------------------------------------------------
 
   canBuild(type: Exclude<FloorType, 'lobby'>): { ok: boolean; reason?: string } {
+    const allowed = ZONE_CONFIGS[this.zone].allowedFloorTypes;
+    if (allowed !== null && !allowed.includes(type)) {
+      return { ok: false, reason: `Not zoned for this — ${ZONE_CONFIGS[this.zone].label}` };
+    }
     if (this.homePopulation < FLOOR_CONFIG[type].unlockPop) {
       return { ok: false, reason: `Needs ${FLOOR_CONFIG[type].unlockPop} residents` };
     }
@@ -215,7 +224,8 @@ export class Game {
     const { activity, duration } = planNext(
       resident,
       this.time % (24 * 60),
-      (type) => pickBusinessFloor(this.tower, this.staffedLevels, type, resident.traits),
+      (type, subtype) =>
+        pickBusinessFloor(this.tower, this.staffedLevels, type, resident.traits, Math.random, subtype),
       Math.random,
       crossTowerJob,
       crossTowerHome,

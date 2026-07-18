@@ -23,6 +23,7 @@ function makeResident(overrides: Partial<Resident> = {}): Resident {
     workEnd: 960,
     didLunch: false,
     didShop: false,
+    didNightlife: false,
     state: { kind: 'idle', floor: 1, activity: { kind: 'home', floor: 1 }, until: 999 },
     color: 0xffffff,
     ...overrides,

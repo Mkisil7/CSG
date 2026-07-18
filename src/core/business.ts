@@ -2,6 +2,7 @@ import {
   BUSINESS,
   BUSINESS_SUBTYPES,
   BusinessProfile,
+  BusinessSubtype,
   ECONOMY,
   FLOOR_CONFIG,
   Floor,
@@ -16,7 +17,7 @@ import { Economy } from './economy';
 import { TowerContext } from './careers';
 
 export function isJobFloorType(type: string): type is JobFloorType {
-  return type === 'shop' || type === 'restaurant' || type === 'office';
+  return type === 'shop' || type === 'restaurant' || type === 'office' || type === 'factory';
 }
 
 export function subtypeProfile(floor: Floor): BusinessProfile | null {
@@ -62,8 +63,11 @@ export function pickBusinessFloor(
   type: JobFloorType,
   traits: Trait[],
   rand: () => number = Math.random,
+  subtype?: BusinessSubtype,
 ): Floor | null {
-  const open = tower.floors.filter((f) => f.type === type && staffedLevels.has(f.level));
+  const open = tower.floors.filter(
+    (f) => f.type === type && staffedLevels.has(f.level) && (!subtype || f.subtype === subtype),
+  );
   if (open.length === 0) return null;
 
   const weights = open.map((f) => {
@@ -82,6 +86,34 @@ export function pickBusinessFloor(
   return open[open.length - 1];
 }
 
+/**
+ * Town-wide goods balance: total goods produced by staffed factories vs total
+ * goods wanted by staffed shops (weighted by each shop's goodsAffinity).
+ * supplyRatio is capped at 1 (a shop can't be more than fully supplied).
+ */
+export function goodsBalance(
+  contexts: TowerContext[],
+  allResidents: Resident[],
+): { supply: number; demand: number; supplyRatio: number } {
+  let supply = 0;
+  let demand = 0;
+  for (const ctx of contexts) {
+    for (const floor of ctx.tower.floors) {
+      const staff = assignedStaff(allResidents, ctx.id, floor.level);
+      if (staff.length === 0) continue;
+      if (floor.type === 'factory') {
+        const mult = subtypeProfile(floor)?.goodsSupply ?? 1;
+        supply += staff.length * BUSINESS.goodsPerFactoryWorkerDay * mult;
+      } else if (floor.type === 'shop') {
+        const affinity = subtypeProfile(floor)?.goodsAffinity ?? 0;
+        demand += affinity * BUSINESS.goodsTargetPerShop;
+      }
+    }
+  }
+  const supplyRatio = demand > 0 ? Math.min(1, supply / demand) : 0;
+  return { supply, demand, supplyRatio };
+}
+
 /** Visit income multiplier from a floor's quality (50 → exactly 1.0x). */
 export function qualityIncomeMultiplier(quality: number): number {
   const { qualityIncomeMinMult, qualityIncomeMaxMult } = BUSINESS;
@@ -96,6 +128,10 @@ export function qualityIncomeMultiplier(quality: number): number {
  */
 export function updateBusinessDay(contexts: TowerContext[], economy: Economy): void {
   const all = contexts.flatMap((c) => c.residents);
+
+  // Pass one: town-wide goods supply (staffed factories) and demand (staffed
+  // shops). Feeds a bonus-only quality boost to shops in pass two.
+  const { supplyRatio } = goodsBalance(contexts, all);
 
   for (const ctx of contexts) {
     for (const floor of ctx.tower.floors) {
@@ -112,12 +148,26 @@ export function updateBusinessDay(contexts: TowerContext[], economy: Economy): v
           staff.reduce((s, r) => s + (tiers[r.jobTier]?.payMultiplier ?? 1), 0) / staff.length;
         const tierFactor = tiers.length > 1 ? Math.min(1, avgTier / (tiers.length - 1)) : 1;
 
-        const idealVisits =
-          staff.length * BUSINESS.baseCustomersPerStaffPerHour * avgPayMult * BUSINESS.operatingHoursPerDay;
-        const utilization = idealVisits > 0 ? floor.visitsToday / idealVisits : 0;
-        const loadFactor = Math.max(0, Math.min(1, 1 - Math.abs(utilization - 1)));
+        if (floor.type === 'factory') {
+          // Factories have no walk-in customers, so the customer-load term that
+          // drives shop/restaurant quality doesn't apply — quality tracks
+          // staffing and crew seniority instead.
+          target = 100 * (0.6 * staffingFactor + 0.4 * tierFactor);
+        } else {
+          const idealVisits =
+            staff.length * BUSINESS.baseCustomersPerStaffPerHour * avgPayMult * BUSINESS.operatingHoursPerDay;
+          const utilization = idealVisits > 0 ? floor.visitsToday / idealVisits : 0;
+          const loadFactor = Math.max(0, Math.min(1, 1 - Math.abs(utilization - 1)));
+          target = 100 * (0.4 * staffingFactor + 0.35 * loadFactor + 0.25 * tierFactor);
 
-        target = 100 * (0.4 * staffingFactor + 0.35 * loadFactor + 0.25 * tierFactor);
+          // Well-supplied shops get a quality bump — never a penalty, so a town
+          // migrating into zoning is never made worse by unsupplied shops.
+          if (floor.type === 'shop') {
+            const affinity = subtypeProfile(floor)?.goodsAffinity ?? 0;
+            target += supplyRatio * affinity * BUSINESS.goodsBonusWeight;
+          }
+        }
+        target = Math.min(100, target);
       }
       floor.quality = Math.max(
         0,

@@ -10,10 +10,11 @@ import {
   trackTowerHeight,
   updateDaylight,
 } from './render/scene';
-import { FloorViews } from './render/floors';
+import { FloorViews, setWindowGlow } from './render/floors';
 import { CharacterViews, ShaftRef } from './render/characters';
 import { ElevatorViews } from './render/elevatorView';
 import { PlotViews } from './render/plots';
+import { ParkView } from './render/parks';
 import { preloadAssets } from './render/assets';
 import {
   SHAFT_X,
@@ -54,6 +55,7 @@ interface TowerViewBundle {
 }
 
 const bundles = new Map<string, TowerViewBundle>();
+const parkViews = new Map<string, ParkView>();
 const plots = new PlotViews(ctx.scene);
 
 function ensureBundles(): void {
@@ -71,6 +73,15 @@ function ensureBundles(): void {
   });
 }
 ensureBundles();
+
+/** A park lot is unlocked but has no tower/game; give it a ParkView. */
+function ensureParkViews(): void {
+  town.slots.forEach((slot, slotIndex) => {
+    if (!slot.unlocked || slot.game || parkViews.has(slot.id)) return;
+    parkViews.set(slot.id, new ParkView(ctx.scene, TOWER_SLOT_ORIGINS[slotIndex]));
+  });
+}
+ensureParkViews();
 
 // ---- camera focus state ---------------------------------------------------
 
@@ -155,9 +166,10 @@ new PickingController(
       }
       return;
     }
-    // Ground pads: locked → purchase panel; unlocked → focus that tower.
+    // Ground pads: a real tower focuses; a locked lot opens the zone/purchase
+    // panel; an unlocked park lot (no tower) opens its read-only info panel.
     const slot = town.slots[result.slotIndex];
-    if (slot?.unlocked) {
+    if (slot?.unlocked && slot.game) {
       setFocus(result.slotIndex);
       inspector.select(null);
     } else {
@@ -208,7 +220,10 @@ function frame(now: number): void {
   }
   plots.sync(town);
 
-  updateDaylight(ctx, town.timeOfDay);
+  const daylight = updateDaylight(ctx, town.timeOfDay);
+  setWindowGlow(daylight);
+  ensureParkViews();
+  for (const park of parkViews.values()) park.updateNight(daylight);
   if (focusedSlot !== null) {
     const game = town.slots[focusedSlot]?.game;
     if (game) trackTowerHeight(ctx, focusedSlot, game.tower.floors.length);

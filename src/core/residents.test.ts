@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createResident, planNext, FloorPicker } from './residents';
+import { createResident, maybeNightlifeVisit, planNext, FloorPicker } from './residents';
 import { Tower } from './tower';
 
 /** A picker over a plain tower where every business floor counts as open. */
 function openPicker(tower: Tower): FloorPicker {
-  return (type) => tower.floors.find((f) => f.type === type) ?? null;
+  return (type, subtype) =>
+    tower.floors.find((f) => f.type === type && (!subtype || f.subtype === subtype)) ?? null;
 }
 
 const noFloors: FloorPicker = () => null;
@@ -99,5 +100,64 @@ describe('closed businesses', () => {
     const plan = planNext(r, r.workStart + 250, noFloors); // lunchtime
     expect(plan.activity.kind).toBe('work');
     expect(r.didLunch).toBe(false); // flag only set when a spot is found
+  });
+});
+
+describe('nightlife', () => {
+  /** A tower with a residential floor and a staffed bar on level 2. */
+  function barTower(): Tower {
+    const t = new Tower();
+    t.addFloor('residential');
+    t.addFloor('restaurant', 'bar');
+    return t;
+  }
+
+  it('sends a bored resident out to a bar inside the evening window', () => {
+    const r = createResident(1, 't0');
+    r.needs.entertainment = 0; // desperate for fun → high chance
+    const out = maybeNightlifeVisit(r, 20 * 60, openPicker(barTower()), () => 0.01);
+    expect(out).not.toBeNull();
+    expect(out!.activity.kind).toBe('eat');
+    expect(out!.activity.floor).toBe(2);
+    expect(r.didNightlife).toBe(true);
+    // Already went out today → no second trip.
+    expect(maybeNightlifeVisit(r, 21 * 60, openPicker(barTower()), () => 0.01)).toBeNull();
+  });
+
+  it('no nightlife outside the evening window', () => {
+    const r = createResident(1, 't0');
+    r.needs.entertainment = 0;
+    expect(maybeNightlifeVisit(r, 14 * 60, openPicker(barTower()), () => 0.01)).toBeNull();
+  });
+
+  it('no nightlife when the town has no open bar', () => {
+    const t = new Tower();
+    t.addFloor('restaurant', 'coffee'); // a café is not a bar
+    const r = createResident(1, 't0');
+    r.needs.entertainment = 0;
+    expect(maybeNightlifeVisit(r, 20 * 60, openPicker(t), () => 0.01)).toBeNull();
+  });
+
+  it('regression: a cross-tower resident\'s evening still routes home via commute', () => {
+    const r = createResident(1, 't0'); // home t0
+    r.jobFloor = 1;
+    r.jobTowerId = 't1'; // works elsewhere; standing in job tower t1 after work
+    // Evening, no bar available (null picker) → must fall through to the home
+    // activity, which for a cross-tower resident is a commute (not a literal).
+    const plan = planNext(r, 21 * 60, noFloors, () => 0.99, false, true);
+    expect(plan.activity.kind).toBe('commute');
+  });
+
+  it('before the window, an employed resident idles only until the window opens', () => {
+    const r = createResident(1, 't0');
+    r.jobFloor = 1;
+    r.jobTowerId = 't0';
+    r.workStart = 480;
+    r.workEnd = 960;
+    r.didShop = true; // skip the after-work errand
+    // 18:00 (1080): after work, before the 19:00 nightlife window.
+    const plan = planNext(r, 1080, openPicker(barTower()), () => 0.99);
+    expect(plan.activity.kind).toBe('home');
+    expect(plan.duration).toBe(19 * 60 - 1080); // wakes to re-check at 19:00
   });
 });

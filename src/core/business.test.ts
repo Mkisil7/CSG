@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   businessGrade,
+  goodsBalance,
   pickBusinessFloor,
   qualityIncomeMultiplier,
   staffedBusinessLevels,
@@ -103,6 +104,57 @@ describe('quality evolution', () => {
     const staff = staffFloor(tower, 't0', 1, 1);
     updateBusinessDay([{ id: 't0', tower, residents: staff }], eco);
     expect(eco.coins).toBeLessThan(1000);
+  });
+});
+
+describe('factory floors', () => {
+  it('a staffed factory builds quality with no customer visits at all', () => {
+    const tower = new Tower();
+    const factory = tower.addFloor('factory');
+    factory.quality = 50;
+    factory.visitsToday = 0;
+    const staff = staffFloor(tower, 't0', factory.level, 4);
+    updateBusinessDay([{ id: 't0', tower, residents: staff }], new Economy(1000));
+    // A shop with zero visits would sink; a factory doesn't serve customers.
+    expect(factory.quality).toBeGreaterThan(50);
+  });
+});
+
+describe('goods supply (factory → shop)', () => {
+  it('goodsBalance sums factory supply and shop demand', () => {
+    const tower = new Tower();
+    const factory = tower.addFloor('factory', 'assembly');
+    const shop = tower.addFloor('shop', 'electronics');
+    const staff = [
+      ...staffFloor(tower, 't0', factory.level, 4),
+      ...staffFloor(tower, 't0', shop.level, 2),
+    ];
+    const bal = goodsBalance([{ id: 't0', tower, residents: staff }], staff);
+    expect(bal.supply).toBeGreaterThan(0);
+    expect(bal.demand).toBeGreaterThan(0);
+    expect(bal.supplyRatio).toBeGreaterThan(0);
+  });
+
+  it('a supplying factory lifts a shop quality vs an identical unsupplied shop', () => {
+    const withFactory = new Tower();
+    const fac = withFactory.addFloor('factory', 'electronics-fab');
+    const shopA = withFactory.addFloor('shop', 'electronics');
+    shopA.quality = 50;
+    shopA.visitsToday = 16; // 2 staff × 1/hr × 8h = ideal load
+    const staffA = [
+      ...staffFloor(withFactory, 't0', fac.level, 4),
+      ...staffFloor(withFactory, 't0', shopA.level, 2),
+    ];
+    updateBusinessDay([{ id: 't0', tower: withFactory, residents: staffA }], new Economy(1000));
+
+    const noFactory = new Tower();
+    const shopB = noFactory.addFloor('shop', 'electronics');
+    shopB.quality = 50;
+    shopB.visitsToday = 16;
+    const staffB = staffFloor(noFactory, 't0', shopB.level, 2);
+    updateBusinessDay([{ id: 't0', tower: noFactory, residents: staffB }], new Economy(1000));
+
+    expect(shopA.quality).toBeGreaterThan(shopB.quality);
   });
 });
 

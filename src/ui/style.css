@@ -189,6 +189,30 @@ body,
   width: 100%;
 }
 
+.zone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.zone-opt {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
+.zone-opt.active {
+  background: #9a8fe0;
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(120, 100, 220, 0.4);
+}
+
+.zone-opt.active .cost {
+  color: #efeaff;
+}
+
 .grade-A { color: #2e9e4f; }
 .grade-B { color: #6fae3d; }
 .grade-C { color: #c9a227; }

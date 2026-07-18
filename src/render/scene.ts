@@ -119,8 +119,12 @@ function addGround(scene: THREE.Scene): void {
   }
 }
 
-/** Shift sky and sun with the time of day for a soft day/night cycle. */
-export function updateDaylight(ctx: SceneContext, timeOfDay: number): void {
+/**
+ * Shift sky and sun with the time of day for a soft day/night cycle. Returns
+ * the 0-1 daylight scalar so callers can drive matching effects (window glow,
+ * park lamps) off the same value.
+ */
+export function updateDaylight(ctx: SceneContext, timeOfDay: number): number {
   const t = 0.5 - 0.5 * Math.cos((timeOfDay / MINUTES_PER_DAY) * Math.PI * 2);
   const daylight = Math.min(1, Math.max(0, (t - 0.15) / 0.5));
 
@@ -129,6 +133,7 @@ export function updateDaylight(ctx: SceneContext, timeOfDay: number): void {
   ctx.sun.color.lerpColors(SUN_NIGHT, SUN_DAY, daylight);
   ctx.sun.intensity = 0.25 + 1.35 * daylight;
   ctx.ambient.intensity = 0.35 + 0.6 * daylight;
+  return daylight;
 }
 
 /** Re-aim the camera at a new target, preserving the current viewing angle. */
