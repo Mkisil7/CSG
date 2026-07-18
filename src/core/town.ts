@@ -1,6 +1,8 @@
 import {
+  JOB_TIERS,
   MINUTES_PER_DAY,
   MOVE_IN_INTERVAL,
+  BUSINESS,
   Resident,
   TOWN,
   ZONE_CONFIGS,
@@ -10,7 +12,13 @@ import { Game, GameEvent } from './game';
 import { Economy } from './economy';
 import { createResident, resetDailyFlags } from './residents';
 import { assignJobs, processPromotions, TowerContext } from './careers';
-import { staffedBusinessLevels, updateBusinessDay, resetBusinessDay } from './business';
+import {
+  assignedStaff,
+  isJobFloorType,
+  staffedBusinessLevels,
+  updateBusinessDay,
+  resetBusinessDay,
+} from './business';
 import { updateHappinessAndEvict } from './happiness';
 import { Missions } from './missions';
 import { TOWER_SLOT_ORIGINS } from './townLayout';
@@ -136,6 +144,68 @@ export class Town {
       slot.game = new Game(slot.id, this.economy, zone);
       this.events.push({ kind: 'build', message: 'Broke ground on a new tower!' });
     }
+    return true;
+  }
+
+  // ---- manual promotion (fast-track) ------------------------------------
+
+  /** The worker on a floor who could be promoted right now (tenure met, a
+   *  senior slot free), most-tenured first — or null if none. */
+  private promotionCandidate(towerId: string, level: number): Resident | null {
+    const game = this.towerById(towerId);
+    const floor = game?.tower.floors[level];
+    if (!game || !floor || !isJobFloorType(floor.type)) return null;
+    const tiers = JOB_TIERS[floor.type];
+    const staff = assignedStaff(this.allResidents(), towerId, level);
+    const eligible = staff
+      .filter((r) => {
+        if (r.jobTier >= tiers.length - 1) return false;
+        const tenure = this.day - (r.jobStartDay ?? this.day);
+        return tenure >= (tiers[r.jobTier]?.tenureDaysToPromote ?? Infinity);
+      })
+      .sort((a, b) => (a.jobStartDay ?? this.day) - (b.jobStartDay ?? this.day));
+    for (const r of eligible) {
+      const nextTier = r.jobTier + 1;
+      const atNext = staff.filter((s) => s.jobTier === nextTier).length;
+      if (atNext < (tiers[nextTier]?.slots ?? 0)) return r;
+    }
+    return null;
+  }
+
+  /** Coins to fast-track the current candidate's promotion, or null if none. */
+  promoteCostAt(towerId: string, level: number): number | null {
+    const cand = this.promotionCandidate(towerId, level);
+    if (!cand) return null;
+    return BUSINESS.promoteCostBase + cand.jobTier * BUSINESS.promoteCostPerTier;
+  }
+
+  canPromoteAt(towerId: string, level: number): { ok: boolean; reason?: string } {
+    const game = this.towerById(towerId);
+    const floor = game?.tower.floors[level];
+    if (!game || !floor || !isJobFloorType(floor.type)) {
+      return { ok: false, reason: 'Not a business' };
+    }
+    const cost = this.promoteCostAt(towerId, level);
+    if (cost === null) return { ok: false, reason: 'No one is due for a promotion' };
+    if (this.economy.coins < cost) return { ok: false, reason: 'Not enough coins' };
+    return { ok: true };
+  }
+
+  /** Pay to promote the due worker now instead of waiting for the daily check. */
+  promoteAt(towerId: string, level: number): boolean {
+    const cand = this.promotionCandidate(towerId, level);
+    const cost = this.promoteCostAt(towerId, level);
+    if (!cand || cost === null || this.economy.coins < cost) return false;
+    const floor = this.towerById(towerId)!.tower.floors[level];
+    if (!isJobFloorType(floor.type)) return false;
+    this.economy.spend(cost);
+    cand.jobTier += 1;
+    cand.jobStartDay = this.day;
+    cand.blockedDays = 0;
+    this.events.push({
+      kind: 'promotion',
+      message: `${cand.name} was promoted to ${JOB_TIERS[floor.type][cand.jobTier].title} at ${floor.name}!`,
+    });
     return true;
   }
 

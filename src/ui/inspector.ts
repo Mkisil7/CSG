@@ -1,5 +1,5 @@
 import { Town } from '../core/town';
-import { Resident, FLOOR_CONFIG, TOWN, ZONE_CONFIGS, ZoneType, SELECTABLE_ZONES } from '../core/types';
+import { BUSINESS, Resident, FLOOR_CONFIG, TOWN, ZONE_CONFIGS, ZoneType, SELECTABLE_ZONES } from '../core/types';
 import { jobTitle } from '../core/careers';
 import { MAX_FLOOR_NAME_LENGTH } from '../core/floorNames';
 import { assignedStaff, businessGrade, isJobFloorType, subtypeProfile } from '../core/business';
@@ -73,13 +73,20 @@ export class Inspector {
     if (!sel) return null;
 
     if (sel.kind === 'missions') {
-      const rows = MISSION_DEFS.map((def) => {
-        const done = town.missions.completed.has(def.id);
-        return `<div class="insp-row ${done ? 'mission-done' : ''}">
-          ${done ? '✅' : '⬜'} <b>${def.label}</b> · +${def.reward}
-          <div class="mission-desc">${def.description}</div>
+      // Show the goals you're still chasing first; completed ones sink down.
+      const ordered = [...MISSION_DEFS].sort(
+        (a, b) =>
+          Number(town.missions.completed.has(a.id)) - Number(town.missions.completed.has(b.id)),
+      );
+      const rows = ordered
+        .map((def) => {
+          const done = town.missions.completed.has(def.id);
+          return `<div class="insp-row ${done ? 'mission-done' : ''}">
+          ${done ? '✅' : '⬜'} <b>${escapeHtml(def.label)}</b> · +${def.reward}
+          <div class="mission-desc">${escapeHtml(def.description)}</div>
         </div>`;
-      }).join('');
+        })
+        .join('');
       return `
         <button class="insp-close" id="insp-close">×</button>
         <div class="insp-title">Missions</div>
@@ -171,7 +178,8 @@ export class Inspector {
             `Staff (${staff.length}/${FLOOR_CONFIG[floor.type].jobs})`,
             staff.map((r) => `${escapeHtml(r.name)} — ${jobTitle(r, floor) ?? 'Worker'}`),
             'No staff yet — closed',
-          )}`;
+          )}
+          ${this.businessActions(town, sel.towerId, sel.level)}`;
       }
 
       const rename =
@@ -256,6 +264,26 @@ export class Inspector {
       </button>`;
   }
 
+  /** Renovate (quality) + Promote (career) actions for a business floor. */
+  private businessActions(town: Town, towerId: string, level: number): string {
+    const game = town.towerById(towerId);
+    if (!game) return '';
+    const rOk = game.canRenovate(level);
+    const rCost = game.renovateCost(level);
+    const pOk = town.canPromoteAt(towerId, level);
+    const pCost = town.promoteCostAt(towerId, level);
+    return `
+      <div class="insp-section">Manage</div>
+      <div class="insp-actions">
+        <button class="build-btn insp-act" id="insp-renovate" ${rOk.ok ? '' : 'disabled'}>
+          ✨ Renovate<span class="cost">${rOk.ok ? `+${BUSINESS.renovateBoost} qual · ${rCost}c` : escapeHtml(rOk.reason ?? '')}</span>
+        </button>
+        <button class="build-btn insp-act" id="insp-promote" ${pOk.ok ? '' : 'disabled'}>
+          ⬆️ Promote<span class="cost">${pOk.ok ? `${pCost}c` : escapeHtml(pOk.reason ?? '')}</span>
+        </button>
+      </div>`;
+  }
+
   private bind(): void {
     document.getElementById('insp-close')?.addEventListener('click', () => this.select(null));
 
@@ -272,6 +300,22 @@ export class Inspector {
         if (e.key === 'Enter') commit();
       });
       rename.addEventListener('blur', commit);
+    }
+
+    if (this.selection?.kind === 'floor') {
+      const sel = this.selection;
+      document.getElementById('insp-renovate')?.addEventListener('click', () => {
+        if (this.getTown().towerById(sel.towerId)?.renovate(sel.level)) {
+          this.onChanged();
+          this.refresh(true);
+        }
+      });
+      document.getElementById('insp-promote')?.addEventListener('click', () => {
+        if (this.getTown().promoteAt(sel.towerId, sel.level)) {
+          this.onChanged();
+          this.refresh(true);
+        }
+      });
     }
 
     if (this.selection?.kind === 'slot') {

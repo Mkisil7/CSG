@@ -189,6 +189,24 @@ body,
   width: 100%;
 }
 
+.insp-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.insp-act {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 12px;
+  padding: 8px 8px;
+  text-align: center;
+}
+
+.insp-act .cost {
+  font-size: 10px;
+}
+
 .zone-list {
   display: flex;
   flex-direction: column;

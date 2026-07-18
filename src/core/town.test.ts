@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Town } from './town';
 import { Game, isToastWorthy } from './game';
-import { MOVE_IN_INTERVAL, TOWN, ZONE_CONFIGS, Resident } from './types';
+import { MINUTES_PER_DAY, MOVE_IN_INTERVAL, TOWN, ZONE_CONFIGS, Resident } from './types';
 import { createResident } from './residents';
 
 /** Force-open a second tower for tests without paying/gating. */
@@ -136,6 +136,35 @@ describe('Town', () => {
     expect(town.slots[1].game).toBeNull();
     expect(town.towers()).toHaveLength(1); // a park is not a tower
     expect(town.parkOrigins()).toHaveLength(1);
+  });
+
+  it('fast-tracks a promotion for an eligible worker (tenure met, senior slot free)', () => {
+    const town = new Town();
+    town.economy.coins = 100000;
+    const t0 = town.slots[0].game!;
+    t0.tower.addFloor('residential');
+    t0.tower.addFloor('office'); // level 2: Intern → Associate → Manager
+
+    // A tenured intern with a free Associate slot above them.
+    const worker = placeResident(town, 't0', { jobTowerId: 't0', jobFloor: 2, jobTier: 0, jobStartDay: 1 });
+    town.time = 10 * MINUTES_PER_DAY; // ~day 11, tenure well past the 2-day gate
+
+    expect(town.canPromoteAt('t0', 2).ok).toBe(true);
+    const before = town.economy.coins;
+    expect(town.promoteAt('t0', 2)).toBe(true);
+    expect(worker.jobTier).toBe(1); // promoted to Associate
+    expect(town.economy.coins).toBeLessThan(before);
+    expect(town.events.some((e) => e.kind === 'promotion')).toBe(true);
+  });
+
+  it('will not promote when nobody is due', () => {
+    const town = new Town();
+    town.economy.coins = 100000;
+    const t0 = town.slots[0].game!;
+    t0.tower.addFloor('office');
+    placeResident(town, 't0', { jobTowerId: 't0', jobFloor: 1, jobTier: 0, jobStartDay: town.day }); // no tenure yet
+    expect(town.canPromoteAt('t0', 1).ok).toBe(false);
+    expect(town.promoteAt('t0', 1)).toBe(false);
   });
 
   it('runs several game days with a factory, a bar, and a park without crashing', () => {

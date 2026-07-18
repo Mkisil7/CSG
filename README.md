@@ -24,6 +24,9 @@ needed after the first visit.
   lights, no customers). Quality grows or decays daily based on staffing,
   traffic, and staff seniority; the inspector shows each floor's letter grade
   and daily profit & loss. Residents pick where to shop by quality and taste.
+  Want to steer it directly? Open any business and **Renovate** it (spend coins
+  for an instant quality bump) or **Promote** a tenured worker into an open
+  senior role on the spot instead of waiting for the daily review.
 - **Click anything**: floors open an inspector (rename them! see the grade and
   who works there), residents show their job title, traits, and happiness,
   empty lots show the price of your next tower.
@@ -63,7 +66,9 @@ needed after the first visit.
   dragging the mood down (housing, jobs, food, entertainment, lift queues,
   commutes). Routine goings-on collect in an **Activity** feed instead of
   burying the screen in pop-ups.
-- **Missions**: a checklist of milestones with coin rewards (🎯 in the menu).
+- **Missions**: a checklist of 100+ milestones with coin rewards (🎯 in the
+  menu) — population and wealth tiers, zoning goals, business grades, career
+  promotions, happiness streaks, and more. Unfinished goals sort to the top.
 - **Speed controls**: pause / 1× / 2× / 4× (top right). Come back later and
   get a "while you were away" report — the town keeps living without you (up
   to a cap).

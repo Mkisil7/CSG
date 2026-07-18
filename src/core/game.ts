@@ -1,4 +1,5 @@
 import {
+  BUSINESS,
   BusinessSubtype,
   ELEVATOR_TIERS,
   FLOOR_CONFIG,
@@ -13,7 +14,7 @@ import { ElevatorSystem } from './elevator';
 import { Economy } from './economy';
 import { planNext } from './residents';
 import { commuteMinutesBetween } from './townLayout';
-import { pickBusinessFloor, qualityIncomeMultiplier, subtypeProfile } from './business';
+import { isJobFloorType, pickBusinessFloor, qualityIncomeMultiplier, subtypeProfile } from './business';
 import { spendingMultiplier } from './happiness';
 
 export type GameEventKind =
@@ -151,6 +152,31 @@ export class Game {
     this.elevatorTier++;
     const tier = ELEVATOR_TIERS[this.elevatorTier];
     for (const shaft of this.shafts()) shaft.applyTier(tier);
+    return true;
+  }
+
+  /** Cost to renovate a business floor (rises with its current quality). */
+  renovateCost(level: number): number | null {
+    const floor = this.tower.floors[level];
+    if (!floor || !isJobFloorType(floor.type)) return null;
+    return Math.round(BUSINESS.renovateBaseCost + floor.quality * BUSINESS.renovateQualityCostMult);
+  }
+
+  canRenovate(level: number): { ok: boolean; reason?: string } {
+    const floor = this.tower.floors[level];
+    if (!floor || !isJobFloorType(floor.type)) return { ok: false, reason: 'Not a business' };
+    if (floor.quality >= 100) return { ok: false, reason: 'Already top quality' };
+    const cost = this.renovateCost(level)!;
+    if (this.economy.coins < cost) return { ok: false, reason: 'Not enough coins' };
+    return { ok: true };
+  }
+
+  /** Spend coins for an instant quality boost (a direct lever on business grade). */
+  renovate(level: number): boolean {
+    if (!this.canRenovate(level).ok) return false;
+    const floor = this.tower.floors[level];
+    this.economy.spend(this.renovateCost(level)!);
+    floor.quality = Math.min(100, floor.quality + BUSINESS.renovateBoost);
     return true;
   }
 

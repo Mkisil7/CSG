@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Town } from './town';
 import { createResident } from './residents';
+import { MISSION_DEFS } from './missions';
 
 function addResidents(town: Town, count: number): void {
   const game = town.slots[0].game!;
@@ -20,11 +21,12 @@ describe('missions', () => {
 
     const first = town.missions.checkInstant(town);
     expect(first.some((e) => e.message.includes('First Neighbors'))).toBe(true);
-    expect(town.economy.coins).toBe(before + 200);
+    const afterFirst = town.economy.coins;
+    expect(afterFirst).toBeGreaterThan(before); // reward(s) paid
 
     const second = town.missions.checkInstant(town);
     expect(second).toHaveLength(0);
-    expect(town.economy.coins).toBe(before + 200); // no double payout
+    expect(town.economy.coins).toBe(afterFirst); // no double payout
   });
 
   it('streak missions require consecutive passing days', () => {
@@ -56,5 +58,11 @@ describe('missions', () => {
     town.economy.earn(600);
     town.missions.checkDaily(town);
     expect(town.missions.completed.has('big-day')).toBe(true);
+  });
+
+  it('ships well over a hundred missions with unique ids', () => {
+    expect(MISSION_DEFS.length).toBeGreaterThan(100);
+    const ids = new Set(MISSION_DEFS.map((m) => m.id));
+    expect(ids.size).toBe(MISSION_DEFS.length); // no duplicate ids
   });
 });

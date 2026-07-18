@@ -175,6 +175,13 @@ export const BUSINESS = {
   goodsTargetPerShop: 15,
   /** Max quality-target bonus a fully-supplied, high-affinity shop gets. */
   goodsBonusWeight: 12,
+  /** Renovate action: quality points added per renovation, and its pricing. */
+  renovateBoost: 18,
+  renovateBaseCost: 120,
+  renovateQualityCostMult: 3,
+  /** Fast-track a promotion (pay to skip the wait): base cost, scaled by tier. */
+  promoteCostBase: 220,
+  promoteCostPerTier: 180,
 };
 
 export interface BusinessProfile {

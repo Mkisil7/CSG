@@ -62,3 +62,28 @@ describe('zone build gating', () => {
     expect(g.buildFloor('factory')).toBe(true);
   });
 });
+
+describe('renovate (business quality lever)', () => {
+  it('spends coins to raise a business floor’s quality', () => {
+    const g = new Game('t0', new Economy(100000));
+    g.homePopulation = 100;
+    g.buildFloor('shop', 'grocery');
+    const shop = g.tower.floors[1];
+    shop.quality = 40;
+    const before = g.economy.coins;
+    expect(g.canRenovate(1).ok).toBe(true);
+    expect(g.renovate(1)).toBe(true);
+    expect(shop.quality).toBeGreaterThan(40);
+    expect(g.economy.coins).toBeLessThan(before);
+  });
+
+  it('cannot renovate a non-business floor or an already-perfect one', () => {
+    const g = new Game('t0', new Economy(100000));
+    g.homePopulation = 100;
+    g.buildFloor('residential');
+    expect(g.canRenovate(1).ok).toBe(false); // apartments aren't a business
+    g.buildFloor('shop');
+    g.tower.floors[2].quality = 100;
+    expect(g.canRenovate(2).ok).toBe(false); // already maxed
+  });
+});
