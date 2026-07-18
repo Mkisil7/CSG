@@ -30,6 +30,10 @@ needed after the first visit.
 - **Click anything**: floors open an inspector (rename them! see the grade and
   who works there), residents show their job title, traits, and happiness,
   empty lots show the price of your next tower.
+- **Getting around**: clicking a tower locks the camera onto it head-on — just
+  scroll up and down to see every floor, no fiddly orbiting. Hit **Town view**
+  to pull back and pan around the whole street, then click another tower to
+  drop into it. Keeps things tidy as the town grows wide.
 - **Careers are real**: residents start as Interns/Clerks/Servers and get
   promoted when tenure is met *and* a higher slot is free on their floor. Stay
   blocked too long and they'll jump ship to a promotion in another building —

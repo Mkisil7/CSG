@@ -21,6 +21,14 @@ const SUN_NIGHT = new THREE.Color(0x9aa8ff);
 export const IS_COARSE_POINTER =
   typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 
+// ---- tower lock (scroll-only camera) --------------------------------------
+// When focused on a tower the camera is pinned to a fixed straight-on angle and
+// only scrolls up/down; the player can't orbit or drift sideways. Town view
+// restores the free orbit camera.
+const TOWER_DIR = new THREE.Vector3(0.28, 0.4, 1).normalize();
+let towerLock: { origin: { x: number; z: number } } | null = null;
+let towerScrollY = 6;
+
 export function createScene(canvas: HTMLCanvasElement): SceneContext {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_COARSE_POINTER ? 1.5 : 2));
@@ -70,6 +78,35 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   };
   window.addEventListener('resize', resize);
   resize();
+
+  // Vertical-scroll input for the locked tower view (ignored in town view,
+  // where OrbitControls is in charge). Picking has its own click threshold, so
+  // these drags never trigger selection.
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      if (!towerLock) return;
+      e.preventDefault();
+      towerScrollY -= e.deltaY * 0.02;
+    },
+    { passive: false },
+  );
+  const pointerY = new Map<number, number>();
+  canvas.addEventListener('pointerdown', (e) => {
+    if (towerLock) pointerY.set(e.pointerId, e.clientY);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!towerLock || !pointerY.has(e.pointerId)) return;
+    const dy = e.clientY - pointerY.get(e.pointerId)!;
+    pointerY.set(e.pointerId, e.clientY);
+    // Drag down → look further up the tower (grab-the-scene feel).
+    towerScrollY += dy * 0.08;
+  });
+  const dropPointer = (e: PointerEvent) => pointerY.delete(e.pointerId);
+  canvas.addEventListener('pointerup', dropPointer);
+  canvas.addEventListener('pointercancel', dropPointer);
+  canvas.addEventListener('pointerleave', dropPointer);
 
   return { renderer, scene, camera, controls, sun, ambient };
 }
@@ -169,4 +206,54 @@ export function trackTowerHeight(ctx: SceneContext, slotIndex: number, floorCoun
   const targetY = Math.max(2, (floorCount * FLOOR_HEIGHT) / 2);
   ctx.controls.target.x += (origin.x - ctx.controls.target.x) * 0.03;
   ctx.controls.target.y += (targetY - ctx.controls.target.y) * 0.02;
+}
+
+// ---- locked tower view ----------------------------------------------------
+
+export function isTowerLocked(): boolean {
+  return towerLock !== null;
+}
+
+/** Camera distance that fits the tower's width for the current aspect ratio,
+ *  so the whole cross-section is visible in portrait or landscape. */
+function towerFitDistance(camera: THREE.PerspectiveCamera): number {
+  const fitWidth = 22; // cross-section span + comfortable margin
+  const vHalf = ((camera.fov * Math.PI) / 180) / 2;
+  const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+  return Math.min(120, Math.max(16, fitWidth / 2 / Math.tan(hHalf)));
+}
+
+/** Enter the locked, scroll-only view of one tower. */
+export function enterTowerLock(ctx: SceneContext, slotIndex: number, floorCount: number): void {
+  towerLock = { origin: TOWER_SLOT_ORIGINS[slotIndex] };
+  ctx.controls.enabled = false;
+  // Start looking at the lower-middle of the tower.
+  towerScrollY = Math.min(floorCount * FLOOR_HEIGHT, FLOOR_HEIGHT * 2.2);
+}
+
+/** Leave the locked view and restore the free town-view orbit camera. */
+export function exitTowerLock(ctx: SceneContext, unlockedSlotIndices: number[]): void {
+  towerLock = null;
+  ctx.controls.enabled = true;
+  focusTown(ctx, unlockedSlotIndices);
+}
+
+/** Per-frame camera placement for the locked tower (call instead of controls.update()). */
+export function updateTowerCam(ctx: SceneContext, floorCount: number): void {
+  if (!towerLock) return;
+  const { origin } = towerLock;
+  const minY = FLOOR_HEIGHT * 0.6;
+  const maxY = Math.max(minY, floorCount * FLOOR_HEIGHT);
+  towerScrollY = Math.min(maxY, Math.max(minY, towerScrollY));
+  const dist = towerFitDistance(ctx.camera);
+  // The tower's cross-section centres ~1 unit right of the slot origin (the two
+  // lift shafts aren't symmetric about it), so aim there for a centred frame.
+  const cx = origin.x + 1;
+  ctx.controls.target.set(cx, towerScrollY, origin.z);
+  ctx.camera.position.set(
+    cx + TOWER_DIR.x * dist,
+    towerScrollY + TOWER_DIR.y * dist,
+    origin.z + TOWER_DIR.z * dist,
+  );
+  ctx.camera.lookAt(ctx.controls.target);
 }

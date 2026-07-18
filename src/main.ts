@@ -5,10 +5,11 @@ import { loadGame, saveGame, clearSave } from './core/save';
 import { offlineGameMinutes, runOfflineCatchup } from './core/offline';
 import {
   createScene,
-  focusTower,
-  focusTown,
-  trackTowerHeight,
+  enterTowerLock,
+  exitTowerLock,
+  isTowerLocked,
   updateDaylight,
+  updateTowerCam,
 } from './render/scene';
 import { FloorViews, setWindowGlow } from './render/floors';
 import { CharacterViews, ShaftRef } from './render/characters';
@@ -95,10 +96,11 @@ function setFocus(slotIndex: number | null): void {
   focusedSlot = slotIndex;
   if (slotIndex === null) {
     const unlocked = town.slots.flatMap((s, i) => (s.unlocked ? [i] : []));
-    focusTown(ctx, unlocked);
+    exitTowerLock(ctx, unlocked);
   } else {
+    // Lock into the tower: fixed straight-on angle, scroll up/down only.
     const game = town.slots[slotIndex]?.game;
-    focusTower(ctx, slotIndex, game ? game.tower.floors.length : 1);
+    enterTowerLock(ctx, slotIndex, game ? game.tower.floors.length : 1);
   }
 }
 
@@ -224,10 +226,6 @@ function frame(now: number): void {
   setWindowGlow(daylight);
   ensureParkViews();
   for (const park of parkViews.values()) park.updateNight(daylight);
-  if (focusedSlot !== null) {
-    const game = town.slots[focusedSlot]?.game;
-    if (game) trackTowerHeight(ctx, focusedSlot, game.tower.floors.length);
-  }
 
   hud.update(town, focusedGame());
   buildMenu.update(focusedSlot !== null, town.missions.completedCount, MISSION_DEFS.length);
@@ -244,7 +242,13 @@ function frame(now: number): void {
     saveGame(town);
   }
 
-  ctx.controls.update();
+  // Locked tower view drives the camera itself; town view uses OrbitControls.
+  if (isTowerLocked() && focusedSlot !== null) {
+    const game = town.slots[focusedSlot]?.game;
+    updateTowerCam(ctx, game ? game.tower.floors.length : 1);
+  } else {
+    ctx.controls.update();
+  }
   ctx.renderer.render(ctx.scene, ctx.camera);
   requestAnimationFrame(frame);
 }
