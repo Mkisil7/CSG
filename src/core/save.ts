@@ -162,6 +162,8 @@ function repairResident(r: Resident): Resident {
     needs: r.needs ?? { housing: 100, employment: 100, food: 100, entertainment: 100 },
     happiness: r.happiness ?? 100,
     unhappyDays: r.unhappyDays ?? 0,
+    nocturnal: r.nocturnal ?? false,
+    didDinner: r.didDinner ?? false,
     didNightlife: r.didNightlife ?? false,
   };
 }

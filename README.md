@@ -53,9 +53,12 @@ needed after the first visit.
   shops benefit most.
 - **Parks**: an Open-Space lot builds no tower but lifts the mood of residents
   in nearby towers, and its lamp posts glow after dark.
-- **Nightlife**: build a Bar & Lounge (a Commercial restaurant) and residents
-  head out in the evening, so the town stays alive after the shops close —
-  and every window lights up warm at night.
+- **Evenings are alive**: after work, residents keep going out — dinner at a
+  restaurant, a drink at a Bar & Lounge, some evening shopping — re-deciding
+  through the night until their (staggered) bedtimes, so the town's busiest,
+  liveliest stretch is actually the evening rather than a dead screen once the
+  shops close. **Night owls** (about a third of residents) stay out late; every
+  window glows warm and park lamps come on after dark.
 - **See what's wrong**: tap the Happiness meter for a breakdown of what's
   dragging the mood down (housing, jobs, food, entertainment, lift queues,
   commutes). Routine goings-on collect in an **Activity** feed instead of

@@ -47,7 +47,7 @@ export function updateHappinessAndEvict(
     // -- needs -----------------------------------------------------------
     resident.needs.food = updateDecayingNeed(
       resident.needs.food,
-      resident.didLunch,
+      resident.didLunch || resident.didDinner,
       townHasRestaurant ? HAPPINESS.foodDecayPerDay : 0,
     );
     resident.needs.entertainment = updateDecayingNeed(

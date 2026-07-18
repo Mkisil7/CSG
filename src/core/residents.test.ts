@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createResident, maybeNightlifeVisit, planNext, FloorPicker } from './residents';
+import { createResident, maybeEveningOuting, planNext, FloorPicker } from './residents';
 import { Tower } from './tower';
+import { NIGHTLIFE } from './types';
 
 /** A picker over a plain tower where every business floor counts as open. */
 function openPicker(tower: Tower): FloorPicker {
@@ -103,61 +104,93 @@ describe('closed businesses', () => {
   });
 });
 
-describe('nightlife', () => {
-  /** A tower with a residential floor and a staffed bar on level 2. */
-  function barTower(): Tower {
+describe('evening life', () => {
+  /** A tower with a residential floor, a shop, a restaurant, and a bar. */
+  function nightTown(): Tower {
     const t = new Tower();
     t.addFloor('residential');
+    t.addFloor('shop', 'grocery');
+    t.addFloor('restaurant', 'coffee');
     t.addFloor('restaurant', 'bar');
     return t;
   }
 
-  it('sends a bored resident out to a bar inside the evening window', () => {
-    const r = createResident(1, 't0');
-    r.needs.entertainment = 0; // desperate for fun → high chance
-    const out = maybeNightlifeVisit(r, 20 * 60, openPicker(barTower()), () => 0.01);
-    expect(out).not.toBeNull();
-    expect(out!.activity.kind).toBe('eat');
-    expect(out!.activity.floor).toBe(2);
-    expect(r.didNightlife).toBe(true);
-    // Already went out today → no second trip.
-    expect(maybeNightlifeVisit(r, 21 * 60, openPicker(barTower()), () => 0.01)).toBeNull();
-  });
-
-  it('no nightlife outside the evening window', () => {
-    const r = createResident(1, 't0');
-    r.needs.entertainment = 0;
-    expect(maybeNightlifeVisit(r, 14 * 60, openPicker(barTower()), () => 0.01)).toBeNull();
-  });
-
-  it('no nightlife when the town has no open bar', () => {
+  it('a resident heads out in the evening even with only a shop (no bar needed)', () => {
     const t = new Tower();
-    t.addFloor('restaurant', 'coffee'); // a café is not a bar
+    t.addFloor('residential');
+    t.addFloor('shop', 'grocery');
     const r = createResident(1, 't0');
     r.needs.entertainment = 0;
-    expect(maybeNightlifeVisit(r, 20 * 60, openPicker(t), () => 0.01)).toBeNull();
+    const out = maybeEveningOuting(r, openPicker(t), () => 0.01);
+    expect(out).not.toBeNull();
+    expect(out!.activity.kind).toBe('shop');
+    expect(r.didShop).toBe(true);
+  });
+
+  it('dinner refills the food need and is a one-shot per day', () => {
+    const t = new Tower();
+    t.addFloor('residential');
+    t.addFloor('restaurant', 'coffee');
+    const r = createResident(1, 't0');
+    r.needs.food = 0;
+    // Force the dinner branch: only a restaurant is available.
+    const out = maybeEveningOuting(r, openPicker(t), () => 0.01);
+    expect(out!.activity.kind).toBe('eat');
+    expect(r.didDinner).toBe(true);
+  });
+
+  it('stays in when nothing is open', () => {
+    const r = createResident(1, 't0');
+    expect(maybeEveningOuting(r, noFloors, () => 0.01)).toBeNull();
+  });
+
+  it('an employed resident keeps re-deciding through the evening (not one dead block)', () => {
+    const r = createResident(1, 't0');
+    r.jobFloor = 1;
+    r.jobTowerId = 't0';
+    r.workStart = 480;
+    r.workEnd = 960;
+    r.nocturnal = false;
+    // 20:00, after work, dice say "stay in this time" → idle only until the
+    // next re-check, so the evening keeps getting replanned.
+    const plan = planNext(r, 20 * 60, openPicker(nightTown()), () => 0.99);
+    expect(plan.activity.kind).toBe('home');
+    expect(plan.duration).toBe(NIGHTLIFE.recheckMinutes);
+  });
+
+  it('after bedtime the resident settles in until the next work day', () => {
+    const r = createResident(1, 't0');
+    r.jobFloor = 1;
+    r.jobTowerId = 't0';
+    r.workStart = 480;
+    r.workEnd = 960;
+    r.nocturnal = false;
+    const plan = planNext(r, 23 * 60, openPicker(nightTown()), () => 0.99); // past 22:30 bedtime
+    expect(plan.activity.kind).toBe('home');
+    // Sleeps through to next morning's workStart.
+    expect(plan.duration).toBe(24 * 60 - 23 * 60 + 480);
+  });
+
+  it('night owls stay up later than early-to-bed residents', () => {
+    const owl = createResident(1, 't0');
+    owl.nocturnal = true;
+    owl.jobFloor = 1;
+    owl.jobTowerId = 't0';
+    owl.workStart = 480;
+    owl.workEnd = 960;
+    // 23:00: past the early bedtime (22:30) but before the owl bedtime (23:45).
+    const plan = planNext(owl, 23 * 60, openPicker(nightTown()), () => 0.99);
+    expect(plan.activity.kind).toBe('home');
+    expect(plan.duration).toBe(NIGHTLIFE.recheckMinutes); // still up, re-checking
   });
 
   it('regression: a cross-tower resident\'s evening still routes home via commute', () => {
     const r = createResident(1, 't0'); // home t0
     r.jobFloor = 1;
     r.jobTowerId = 't1'; // works elsewhere; standing in job tower t1 after work
-    // Evening, no bar available (null picker) → must fall through to the home
+    // Evening, nothing open (null picker) → must fall through to the home
     // activity, which for a cross-tower resident is a commute (not a literal).
     const plan = planNext(r, 21 * 60, noFloors, () => 0.99, false, true);
     expect(plan.activity.kind).toBe('commute');
-  });
-
-  it('before the window, an employed resident idles only until the window opens', () => {
-    const r = createResident(1, 't0');
-    r.jobFloor = 1;
-    r.jobTowerId = 't0';
-    r.workStart = 480;
-    r.workEnd = 960;
-    r.didShop = true; // skip the after-work errand
-    // 18:00 (1080): after work, before the 19:00 nightlife window.
-    const plan = planNext(r, 1080, openPicker(barTower()), () => 0.99);
-    expect(plan.activity.kind).toBe('home');
-    expect(plan.duration).toBe(19 * 60 - 1080); // wakes to re-check at 19:00
   });
 });

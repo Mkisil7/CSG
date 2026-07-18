@@ -55,7 +55,9 @@ export function createResident(
     unhappyDays: 0,
     workStart,
     workEnd: workStart + 480,
+    nocturnal: rand() < NIGHTLIFE.nocturnalFraction,
     didLunch: false,
+    didDinner: false,
     didShop: false,
     didNightlife: false,
     // New residents arrive at the lobby and ride up — real traffic from minute one.
@@ -72,35 +74,91 @@ export interface PlannedActivity {
 /** Picks an open business floor of a type (optionally a specific subtype), or null. */
 export type FloorPicker = (type: JobFloorType, subtype?: BusinessSubtype) => Floor | null;
 
-/**
- * In the evening window, a resident may head out to a bar/lounge — more likely
- * when their entertainment need is depleted. Returns null (no outing) when it's
- * not evening, they've already gone out today, the dice say no, or the town has
- * no open bar. Sets didNightlife so the day-rollover refills entertainment.
- */
-export function maybeNightlifeVisit(
-  resident: Resident,
-  timeOfDay: number,
-  pickFloor: FloorPicker,
-  rand: () => number,
-): PlannedActivity | null {
-  if (resident.didNightlife) return null;
-  if (timeOfDay < NIGHTLIFE.startMinute || timeOfDay >= NIGHTLIFE.endMinute) return null;
-  const chance =
-    NIGHTLIFE.baseChance + NIGHTLIFE.needChanceWeight * (1 - resident.needs.entertainment / 100);
-  if (rand() >= chance) return null;
-  const spot = pickFloor('restaurant', 'bar');
-  if (!spot) return null;
-  resident.didNightlife = true;
-  return { activity: { kind: 'eat', floor: spot.level }, duration: NIGHTLIFE.visitDuration };
+/** When this resident turns in for the night. */
+function bedtimeOf(resident: Resident): number {
+  return resident.nocturnal ? NIGHTLIFE.nocturnalBedtime : NIGHTLIFE.bedtime;
 }
 
 /**
- * How a resident spends the evening after work. Crucially this returns the
- * caller's `home` activity (which is a cross-tower `commute` for residents who
- * live elsewhere — never a same-tower literal) and, before the nightlife window
- * closes, only idles until the next window edge so the evening actually gets
- * replanned instead of collapsing into one dead overnight block.
+ * An evening outing: dinner, a drink, or some shopping — whatever's open and
+ * appealing, weighted by how depleted the matching need is and (for bars) the
+ * resident's social/trendy taste. Each kind fires at most once a day (flags),
+ * so a resident might dine, then later grab a drink. Returns null when nothing
+ * suitable is open or the dice say stay in. This is what keeps evenings alive
+ * even in a town with no bar — any restaurant or shop draws an evening crowd.
+ */
+export function maybeEveningOuting(
+  resident: Resident,
+  pickFloor: FloorPicker,
+  rand: () => number,
+): PlannedActivity | null {
+  const options: { weight: number; activity: Activity; duration: number; done: () => void }[] = [];
+
+  if (!resident.didDinner) {
+    const spot = pickFloor('restaurant');
+    if (spot) {
+      options.push({
+        weight: 1 + (1 - resident.needs.food / 100) * 2,
+        activity: { kind: 'eat', floor: spot.level },
+        duration: NIGHTLIFE.dinnerDuration,
+        done: () => {
+          resident.didDinner = true;
+        },
+      });
+    }
+  }
+  if (!resident.didNightlife) {
+    const bar = pickFloor('restaurant', 'bar');
+    if (bar) {
+      const taste =
+        resident.traits.includes('social') || resident.traits.includes('trendy') ? 1.6 : 1;
+      options.push({
+        weight: (0.6 + (1 - resident.needs.entertainment / 100) * 1.5) * taste,
+        activity: { kind: 'eat', floor: bar.level },
+        duration: NIGHTLIFE.drinksDuration,
+        done: () => {
+          resident.didNightlife = true;
+        },
+      });
+    }
+  }
+  if (!resident.didShop) {
+    const shop = pickFloor('shop');
+    if (shop) {
+      options.push({
+        weight: 0.8 + (1 - resident.needs.entertainment / 100) * 1.5,
+        activity: { kind: 'shop', floor: shop.level },
+        duration: NIGHTLIFE.shopDuration,
+        done: () => {
+          resident.didShop = true;
+        },
+      });
+    }
+  }
+  if (options.length === 0) return null;
+
+  const goChance = NIGHTLIFE.baseChance + (resident.nocturnal ? NIGHTLIFE.nocturnalBonus : 0);
+  if (rand() >= goChance) return null;
+
+  const total = options.reduce((s, o) => s + o.weight, 0);
+  let roll = rand() * total;
+  for (const opt of options) {
+    roll -= opt.weight;
+    if (roll <= 0) {
+      opt.done();
+      return { activity: opt.activity, duration: opt.duration };
+    }
+  }
+  return null;
+}
+
+/**
+ * How a resident spends the evening. Until their (staggered) bedtime they keep
+ * re-deciding whether to head out — dinner, drinks, shopping — so the town has
+ * ongoing evening traffic instead of everyone freezing at home when work ends.
+ * Crucially this returns the caller's `home` activity (a cross-tower `commute`
+ * for residents who live elsewhere — never a same-tower literal), and it only
+ * idles until the next re-check, so the evening actually gets replanned.
  */
 function eveningPlan(
   resident: Resident,
@@ -109,15 +167,13 @@ function eveningPlan(
   pickFloor: FloorPicker,
   rand: () => number,
 ): PlannedActivity {
-  if (timeOfDay < NIGHTLIFE.endMinute) {
-    const out = maybeNightlifeVisit(resident, timeOfDay, pickFloor, rand);
+  if (timeOfDay < bedtimeOf(resident)) {
+    const out = maybeEveningOuting(resident, pickFloor, rand);
     if (out) return out;
-    const nextCheck =
-      timeOfDay < NIGHTLIFE.startMinute ? NIGHTLIFE.startMinute : NIGHTLIFE.endMinute;
-    return { activity: home, duration: Math.max(1, nextCheck - timeOfDay) };
+    return { activity: home, duration: NIGHTLIFE.recheckMinutes };
   }
-  // Late night: settle in until the next work day begins.
-  return { activity: home, duration: MINUTES_PER_DAY - timeOfDay + resident.workStart };
+  // Bedtime: settle in until the next work day begins.
+  return { activity: home, duration: Math.max(1, MINUTES_PER_DAY - timeOfDay + resident.workStart) };
 }
 
 /**
@@ -179,19 +235,12 @@ export function planNext(
       const until = !resident.didLunch ? Math.min(lunchTime, resident.workEnd) : resident.workEnd;
       return { activity: work, duration: Math.max(1, until - timeOfDay) };
     }
-    // After work: maybe an errand, then the evening (nightlife or wind down).
-    if (!resident.didShop && rand() < 0.6) {
-      const spot = pickFloor('shop');
-      if (spot) {
-        resident.didShop = true;
-        return { activity: { kind: 'shop', floor: spot.level }, duration: 30 };
-      }
-    }
+    // After work: the evening — dinner, drinks, shopping, then bed.
     return eveningPlan(resident, timeOfDay, home, pickFloor, rand);
   }
 
-  // Unemployed: potter around — occasional daytime shop/restaurant visits.
-  if (timeOfDay >= 600 && timeOfDay < 1200 && rand() < 0.35) {
+  // Unemployed: potter around during the day — occasional shop/restaurant trips.
+  if (timeOfDay >= 600 && timeOfDay < NIGHTLIFE.eveningStart && rand() < 0.35) {
     const type: JobFloorType = rand() < 0.5 ? 'shop' : 'restaurant';
     const spot = pickFloor(type);
     if (spot) {
@@ -203,9 +252,10 @@ export function planNext(
       };
     }
   }
-  // Even the unemployed enjoy a night out.
-  const out = maybeNightlifeVisit(resident, timeOfDay, pickFloor, rand);
-  if (out) return out;
+  // …and they enjoy the evening out too.
+  if (timeOfDay >= NIGHTLIFE.eveningStart) {
+    return eveningPlan(resident, timeOfDay, home, pickFloor, rand);
+  }
   return { activity: home, duration: 45 + rand() * 90 };
 }
 
@@ -213,6 +263,7 @@ export function planNext(
 export function resetDailyFlags(residents: Resident[]): void {
   for (const r of residents) {
     r.didLunch = false;
+    r.didDinner = false;
     r.didShop = false;
     r.didNightlife = false;
   }

@@ -72,7 +72,11 @@ export interface Resident {
   unhappyDays: number;
   workStart: number; // game minutes since midnight
   workEnd: number;
+  /** Night owls stay out later in the evening and go out more readily. */
+  nocturnal: boolean;
   didLunch: boolean;
+  /** Went out for an evening meal (refills the food need, like lunch). */
+  didDinner: boolean;
   didShop: boolean;
   /** Went out to a bar/lounge this evening (separate from didShop). */
   didNightlife: boolean;
@@ -246,15 +250,29 @@ export const HAPPINESS = {
   transitCommutePenaltyPerMinute: 0.15,
 };
 
-/** Evening nightlife window: when and how likely residents go out to a bar. */
+/**
+ * Evening life: after work, residents keep going out — dinner, a drink, some
+ * shopping — until their (staggered) bedtime, so the town stays alive at night
+ * instead of everyone freezing at home the moment work ends.
+ */
 export const NIGHTLIFE = {
-  startMinute: 19 * 60, // 19:00
-  endMinute: 23 * 60, // 23:00
-  visitDuration: 45,
-  /** Base chance per evening replan that a resident heads out. */
+  /** When the evening begins (earliest an unemployed resident heads out). */
+  eveningStart: 17 * 60, // 17:00
+  /** Early-to-bed residents settle in around here. */
+  bedtime: 22 * 60 + 30, // 22:30
+  /** Night owls stay out much later. */
+  nocturnalBedtime: 23 * 60 + 45, // 23:45
+  /** Share of residents who are night owls. */
+  nocturnalFraction: 0.35,
+  /** How often (game minutes) a resident at home re-decides whether to go out. */
+  recheckMinutes: 35,
+  /** Base chance to head out on a given evening check. */
   baseChance: 0.3,
-  /** Additional chance scaled by how depleted their entertainment need is (0-1). */
-  needChanceWeight: 0.45,
+  /** Extra going-out chance for night owls. */
+  nocturnalBonus: 0.18,
+  dinnerDuration: 40,
+  drinksDuration: 45,
+  shopDuration: 30,
 };
 
 export const ELEVATOR = {
