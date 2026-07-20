@@ -220,8 +220,10 @@ export class Town {
 
     this.handleMoveIns(dt);
 
+    const townPop = this.population;
     for (const game of this.towers()) {
       game.homePopulation = this.homeResidentsOf(game.id).length;
+      game.townPopulation = townPop;
       game.staffedLevels = staffedBusinessLevels(game.tower, game.id, this.allResidents());
       game.tick(dt, this.time);
       this.events.push(...game.events);

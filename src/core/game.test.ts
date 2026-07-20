@@ -38,7 +38,7 @@ describe('averageWait pooling', () => {
 describe('zone build gating', () => {
   it('mixed zone (the default) allows every floor type', () => {
     const g = new Game('t0', new Economy(100000), 'mixed');
-    g.homePopulation = 100;
+    g.townPopulation = 100;
     for (const t of ['residential', 'shop', 'restaurant', 'office', 'factory'] as const) {
       expect(g.canBuild(t).ok).toBe(true);
     }
@@ -46,7 +46,7 @@ describe('zone build gating', () => {
 
   it('a residential zone rejects non-residential floors with a clear reason', () => {
     const g = new Game('t0', new Economy(100000), 'residential');
-    g.homePopulation = 100;
+    g.townPopulation = 100;
     expect(g.canBuild('residential').ok).toBe(true);
     const shop = g.canBuild('shop');
     expect(shop.ok).toBe(false);
@@ -55,18 +55,27 @@ describe('zone build gating', () => {
 
   it('an industrial zone allows factories but not shops; buildFloor honours it', () => {
     const g = new Game('t0', new Economy(100000), 'industrial');
-    g.homePopulation = 100;
+    g.townPopulation = 100;
     expect(g.canBuild('factory').ok).toBe(true);
     expect(g.canBuild('shop').ok).toBe(false);
     expect(g.buildFloor('shop')).toBe(false); // gate blocks the actual build
     expect(g.buildFloor('factory')).toBe(true);
+  });
+
+  it('a commercial lot with no homes of its own can still build once the town has people', () => {
+    const g = new Game('t1', new Economy(100000), 'commercial');
+    g.homePopulation = 0; // a commercial zone can't build apartments…
+    g.townPopulation = 20; // …but the workforce/customers exist town-wide
+    expect(g.canBuild('shop').ok).toBe(true);
+    expect(g.canBuild('restaurant').ok).toBe(true);
+    expect(g.buildFloor('shop', 'grocery')).toBe(true);
   });
 });
 
 describe('renovate (business quality lever)', () => {
   it('spends coins to raise a business floor’s quality', () => {
     const g = new Game('t0', new Economy(100000));
-    g.homePopulation = 100;
+    g.townPopulation = 100;
     g.buildFloor('shop', 'grocery');
     const shop = g.tower.floors[1];
     shop.quality = 40;
@@ -79,7 +88,7 @@ describe('renovate (business quality lever)', () => {
 
   it('cannot renovate a non-business floor or an already-perfect one', () => {
     const g = new Game('t0', new Economy(100000));
-    g.homePopulation = 100;
+    g.townPopulation = 100;
     g.buildFloor('residential');
     expect(g.canRenovate(1).ok).toBe(false); // apartments aren't a business
     g.buildFloor('shop');

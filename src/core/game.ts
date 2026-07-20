@@ -86,6 +86,12 @@ export class Game {
   /** Residents whose home is this tower — maintained by Town each tick. */
   homePopulation = 0;
 
+  /** Whole-town population — maintained by Town each tick. Business/workplace
+   *  floors gate on this (their staff and customers come from anywhere in town),
+   *  so a commercial/office/industrial lot with no homes of its own can still
+   *  be built up once the town has enough people. */
+  townPopulation = 0;
+
   /** Business levels with at least one hired staffer — maintained by Town. */
   staffedLevels = new Set<number>();
 
@@ -116,8 +122,8 @@ export class Game {
     if (allowed !== null && !allowed.includes(type)) {
       return { ok: false, reason: `Not zoned for this — ${ZONE_CONFIGS[this.zone].label}` };
     }
-    if (this.homePopulation < FLOOR_CONFIG[type].unlockPop) {
-      return { ok: false, reason: `Needs ${FLOOR_CONFIG[type].unlockPop} residents` };
+    if (this.townPopulation < FLOOR_CONFIG[type].unlockPop) {
+      return { ok: false, reason: `Needs ${FLOOR_CONFIG[type].unlockPop} town residents` };
     }
     if (this.economy.coins < this.tower.nextFloorCost(type)) {
       return { ok: false, reason: 'Not enough coins' };
@@ -182,8 +188,8 @@ export class Game {
 
   canUnlockSecondShaft(): { ok: boolean; reason?: string } {
     if (this.secondElevator) return { ok: false, reason: 'Already built' };
-    if (this.homePopulation < SECOND_SHAFT.unlockPop) {
-      return { ok: false, reason: `Needs ${SECOND_SHAFT.unlockPop} residents` };
+    if (this.townPopulation < SECOND_SHAFT.unlockPop) {
+      return { ok: false, reason: `Needs ${SECOND_SHAFT.unlockPop} town residents` };
     }
     if (this.economy.coins < SECOND_SHAFT.cost) return { ok: false, reason: 'Not enough coins' };
     return { ok: true };

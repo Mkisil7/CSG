@@ -28,7 +28,7 @@ describe('save/load round trip (v3)', () => {
     t0.tower.floors[2].quality = 72;
     town.economy.coins = 5000;
     t0.upgradeSpeed();
-    t0.homePopulation = 99; // bypass the gate for the test
+    t0.townPopulation = 99; // bypass the gate for the test
     t0.unlockSecondShaft();
     town.missions.completed.add('first-neighbors');
 

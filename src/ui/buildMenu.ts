@@ -333,7 +333,7 @@ export class BuildMenu {
       }
       const cost = game.tower.nextFloorCost(type);
       const gate = game.canBuild(type);
-      const locked = game.homePopulation < cfg.unlockPop;
+      const locked = game.townPopulation < cfg.unlockPop;
       // Permanent zoning takes priority over the temporary population gate.
       if (gate.reason && gate.reason.startsWith('Not zoned')) {
         btn.innerHTML = `${cfg.label}<span class="cost">🚫 ${gate.reason.replace('Not zoned for this — ', '')}</span>`;
@@ -341,7 +341,7 @@ export class BuildMenu {
         continue;
       }
       btn.innerHTML = locked
-        ? `${cfg.label}<span class="cost">🔒 ${cfg.unlockPop} residents</span>`
+        ? `${cfg.label}<span class="cost">🔒 ${cfg.unlockPop} in town</span>`
         : `${cfg.label}<span class="cost">${type === 'residential' ? `${cost} coins` : 'choose type…'}</span>`;
       btn.disabled = locked || game.economy.coins < cost;
     }
@@ -364,7 +364,7 @@ export class BuildMenu {
         this.shaftButton.disabled = true;
       } else {
         const check = game.canUnlockSecondShaft();
-        const gated = game.homePopulation < SECOND_SHAFT.unlockPop;
+        const gated = game.townPopulation < SECOND_SHAFT.unlockPop;
         this.shaftButton.innerHTML = gated
           ? `2nd lift<span class="cost">🔒 ${SECOND_SHAFT.unlockPop} residents</span>`
           : `2nd lift<span class="cost">${SECOND_SHAFT.cost} coins</span>`;
