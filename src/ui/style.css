@@ -499,6 +499,136 @@ body,
   }
 }
 
+/* --- friends / sharing ------------------------------------------------ */
+
+.social-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(40, 34, 58, 0.5);
+  padding: 12px;
+}
+
+.social-card {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px 22px;
+  width: min(440px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 36px rgba(40, 34, 58, 0.4);
+  color: #4a4458;
+}
+
+.social-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  padding-right: 24px;
+}
+
+.social-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.social-section {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b84a0;
+  margin: 12px 0 2px;
+}
+
+.social-row {
+  font-size: 14px;
+  padding: 2px 0;
+}
+
+.social-label {
+  font-size: 12px;
+  color: #8b84a0;
+  margin-bottom: 4px;
+}
+
+.social-input,
+.social-textarea {
+  width: 100%;
+  border: 1.5px solid #e0d8ee;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #4a4458;
+  resize: vertical;
+}
+
+.social-textarea {
+  word-break: break-all;
+}
+
+.social-action {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.social-out:not(:empty) {
+  margin-top: 8px;
+}
+
+.social-codeblock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.social-amounts {
+  display: flex;
+  gap: 6px;
+}
+
+.social-amounts .build-btn {
+  flex: 1 1 0;
+}
+
+.visiting-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(154, 143, 224, 0.96);
+  color: #fff;
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(60, 50, 90, 0.3);
+  max-width: 94vw;
+}
+
+.visiting-banner .build-btn {
+  padding: 6px 12px;
+  color: #4a4458;
+}
+
+@media (max-width: 640px) {
+  .visiting-banner {
+    top: auto;
+    bottom: 12px;
+    font-size: 13px;
+  }
+}
+
 #toast {
   position: absolute;
   bottom: 84px;

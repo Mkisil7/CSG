@@ -16,7 +16,7 @@ interface TowerSave {
   residents: Resident[];
 }
 
-interface SaveData {
+export interface SaveData {
   version: 4;
   time: number;
   coins: number;
@@ -27,8 +27,9 @@ interface SaveData {
   towers: TowerSave[];
 }
 
-export function saveGame(town: Town, storage: Storage = localStorage): void {
-  const data: SaveData = {
+/** Pure snapshot of a town into the save shape (no storage). Reused for sharing. */
+export function toSaveData(town: Town): SaveData {
+  return {
     version: 4,
     time: town.time,
     coins: town.economy.coins,
@@ -45,8 +46,11 @@ export function saveGame(town: Town, storage: Storage = localStorage): void {
       residents: slot.game?.residents ?? [],
     })),
   };
+}
+
+export function saveGame(town: Town, storage: Storage = localStorage): void {
   try {
-    storage.setItem(SAVE_KEY, JSON.stringify(data));
+    storage.setItem(SAVE_KEY, JSON.stringify(toSaveData(town)));
   } catch {
     // Storage full or unavailable — losing an autosave isn't fatal.
   }
@@ -56,6 +60,76 @@ export interface LoadResult {
   town: Town;
   /** Real seconds since the save was written (0 if unknown). */
   awayRealSeconds: number;
+}
+
+/** Rebuild a Town from save data (pure). Returns null on a version mismatch. */
+export function townFromSaveData(data: SaveData): Town | null {
+  if (!data || data.version !== 4) return null;
+
+  const town = new Town();
+  town.time = data.time;
+  town.moveInTimer = data.moveInTimer ?? 0;
+  town.economy.coins = data.coins;
+  town.missions.completed = new Set(data.completedMissions ?? []);
+
+  let maxId = 0;
+  for (let i = 0; i < town.slots.length; i++) {
+    const saved = data.towers[i];
+    const slot = town.slots[i];
+    if (!saved || !saved.unlocked) {
+      if (i > 0) {
+        slot.unlocked = false;
+        slot.zone = 'mixed';
+        slot.game = null;
+      }
+      continue;
+    }
+    slot.unlocked = true;
+    slot.zone = saved.zone ?? 'mixed';
+    // A park lot holds no tower — restore it and move on.
+    if (ZONE_CONFIGS[slot.zone].isPark) {
+      slot.game = null;
+      continue;
+    }
+    const game =
+      slot.game && slot.game.zone === slot.zone
+        ? slot.game
+        : new Game(slot.id, town.economy, slot.zone);
+    slot.game = game;
+    game.tower.floors = saved.floors.map(repairFloor);
+    game.elevatorTier = Math.min(saved.elevatorTier, ELEVATOR_TIERS.length - 1);
+    game.elevator.applyTier(ELEVATOR_TIERS[game.elevatorTier]);
+    if (saved.secondShaft) {
+      game.secondElevator = new ElevatorSystem(1);
+      game.secondElevator.applyTier(ELEVATOR_TIERS[game.elevatorTier]);
+    }
+    game.residents = saved.residents.map(repairResident);
+
+    // Lift queues and street commutes aren't saved: put every in-transit
+    // resident back on solid ground and let them replan immediately.
+    for (const r of game.residents) {
+      const idNum = parseInt(r.id.slice(1), 10);
+      if (!Number.isNaN(idNum)) maxId = Math.max(maxId, idNum);
+      if (r.state.kind === 'waiting') {
+        r.state = {
+          kind: 'idle',
+          floor: r.state.floor,
+          activity: { kind: 'lobby', floor: r.state.floor },
+          until: town.time,
+        };
+      } else if (r.state.kind === 'riding' || r.state.kind === 'commuting') {
+        r.state = {
+          kind: 'idle',
+          floor: 0,
+          activity: { kind: 'lobby', floor: 0 },
+          until: town.time,
+        };
+      }
+      r.pendingActivity = undefined;
+    }
+  }
+  bumpIdCounter(maxId);
+  return town;
 }
 
 export function loadGame(storage: Storage = localStorage): LoadResult | null {
@@ -69,72 +143,8 @@ export function loadGame(storage: Storage = localStorage): LoadResult | null {
 
   try {
     const data = JSON.parse(raw) as SaveData;
-    if (data.version !== 4) return null;
-
-    const town = new Town();
-    town.time = data.time;
-    town.moveInTimer = data.moveInTimer ?? 0;
-    town.economy.coins = data.coins;
-    town.missions.completed = new Set(data.completedMissions ?? []);
-
-    let maxId = 0;
-    for (let i = 0; i < town.slots.length; i++) {
-      const saved = data.towers[i];
-      const slot = town.slots[i];
-      if (!saved || !saved.unlocked) {
-        if (i > 0) {
-          slot.unlocked = false;
-          slot.zone = 'mixed';
-          slot.game = null;
-        }
-        continue;
-      }
-      slot.unlocked = true;
-      slot.zone = saved.zone ?? 'mixed';
-      // A park lot holds no tower — restore it and move on.
-      if (ZONE_CONFIGS[slot.zone].isPark) {
-        slot.game = null;
-        continue;
-      }
-      const game =
-        slot.game && slot.game.zone === slot.zone
-          ? slot.game
-          : new Game(slot.id, town.economy, slot.zone);
-      slot.game = game;
-      game.tower.floors = saved.floors.map(repairFloor);
-      game.elevatorTier = Math.min(saved.elevatorTier, ELEVATOR_TIERS.length - 1);
-      game.elevator.applyTier(ELEVATOR_TIERS[game.elevatorTier]);
-      if (saved.secondShaft) {
-        game.secondElevator = new ElevatorSystem(1);
-        game.secondElevator.applyTier(ELEVATOR_TIERS[game.elevatorTier]);
-      }
-      game.residents = saved.residents.map(repairResident);
-
-      // Lift queues and street commutes aren't saved: put every in-transit
-      // resident back on solid ground and let them replan immediately.
-      for (const r of game.residents) {
-        const idNum = parseInt(r.id.slice(1), 10);
-        if (!Number.isNaN(idNum)) maxId = Math.max(maxId, idNum);
-        if (r.state.kind === 'waiting') {
-          r.state = {
-            kind: 'idle',
-            floor: r.state.floor,
-            activity: { kind: 'lobby', floor: r.state.floor },
-            until: town.time,
-          };
-        } else if (r.state.kind === 'riding' || r.state.kind === 'commuting') {
-          r.state = {
-            kind: 'idle',
-            floor: 0,
-            activity: { kind: 'lobby', floor: 0 },
-            until: town.time,
-          };
-        }
-        r.pendingActivity = undefined;
-      }
-    }
-    bumpIdCounter(maxId);
-
+    const town = townFromSaveData(data);
+    if (!town) return null;
     const awayRealSeconds = data.savedAtWallClock
       ? Math.max(0, (Date.now() - data.savedAtWallClock) / 1000)
       : 0;

@@ -75,6 +75,12 @@ needed after the first visit.
 - **Missions**: a checklist of 100+ milestones with coin rewards (🎯 in the
   menu) — population and wealth tiers, zoning goals, business grades, career
   promotions, happiness streaks, and more. Unfinished goals sort to the top.
+- **Play with friends** (🌐 Friends): share a link and a friend can **walk
+  through your town** read-only — scroll your towers, click floors and
+  residents, watch it run — then hop back to their own. **Send coin gifts** as
+  links too: it comes out of your treasury and lands in theirs when they accept.
+  It's all done with shareable codes, so there's still **no server, no account,
+  and no tracking** — the game stays free, offline, and static.
 - **Speed controls**: pause / 1× / 2× / 4× (top right). Come back later and
   get a "while you were away" report — the town keeps living without you (up
   to a cap).

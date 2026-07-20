@@ -30,6 +30,7 @@ export class BuildMenu {
   private viewButton: HTMLButtonElement;
   private missionsButton: HTMLButtonElement;
   private activityButton: HTMLButtonElement;
+  private friendsButton: HTMLButtonElement;
   private resetButton: HTMLButtonElement;
   private popover: HTMLDivElement;
   private popoverType: JobFloorType | null = null;
@@ -50,6 +51,7 @@ export class BuildMenu {
     onToggleView: () => void,
     onShowMissions: () => void,
     onShowActivity: () => void,
+    onShowSocial: () => void,
     onReset: () => void,
   ) {
     this.popover = document.createElement('div');
@@ -131,6 +133,14 @@ export class BuildMenu {
       onShowActivity();
     });
 
+    this.friendsButton = document.createElement('button');
+    this.friendsButton.className = 'build-btn';
+    this.friendsButton.textContent = '🌐 Friends';
+    this.friendsButton.addEventListener('click', () => {
+      this.closeSheet();
+      onShowSocial();
+    });
+
     this.resetButton = document.createElement('button');
     this.resetButton.className = 'build-btn danger';
     this.resetButton.textContent = 'New town';
@@ -152,6 +162,7 @@ export class BuildMenu {
     root.appendChild(this.viewButton);
     root.appendChild(this.missionsButton);
     root.appendChild(this.activityButton);
+    root.appendChild(this.friendsButton);
     root.appendChild(this.resetButton);
   }
 
@@ -205,6 +216,7 @@ export class BuildMenu {
       this.sheet.appendChild(this.shaftButton);
       this.sheet.appendChild(this.missionsButton);
       this.sheet.appendChild(this.activityButton);
+      this.sheet.appendChild(this.friendsButton);
       this.sheet.appendChild(this.resetButton);
     }
     this.showSheet();

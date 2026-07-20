@@ -40,6 +40,8 @@ export class Inspector {
     private readonly root: HTMLElement,
     private readonly getTown: () => Town,
     private readonly onChanged: () => void,
+    /** When visiting a friend's town, hide all mutating controls. */
+    private readonly readOnly = false,
   ) {
     root.classList.add('inspector');
   }
@@ -202,11 +204,11 @@ export class Inspector {
             staff.map((r) => `${escapeHtml(r.name)} — ${jobTitle(r, floor) ?? 'Worker'}`),
             'No staff yet — closed',
           )}
-          ${this.businessActions(town, sel.towerId, sel.level)}`;
+          ${this.readOnly ? '' : this.businessActions(town, sel.towerId, sel.level)}`;
       }
 
       const rename =
-        floor.type === 'lobby'
+        floor.type === 'lobby' || this.readOnly
           ? `<div class="insp-title">${escapeHtml(floor.name)}</div>`
           : `<input id="insp-rename" maxlength="${MAX_FLOOR_NAME_LENGTH}" value="${escapeHtml(floor.name)}" />`;
 
@@ -261,6 +263,14 @@ export class Inspector {
         <div class="insp-sub">Open space</div>
         <div class="insp-row">${escapeHtml(cfg.description)}</div>
         <div class="insp-row">🌳 Lifts the mood of residents in nearby towers.</div>`;
+    }
+
+    // Visiting a friend's town: a locked lot is just empty land, no purchase.
+    if (this.readOnly) {
+      return `
+        <button class="insp-close" id="insp-close">×</button>
+        <div class="insp-title">Empty lot</div>
+        <div class="insp-sub">Undeveloped land</div>`;
     }
 
     const chosen = ZONE_CONFIGS[this.zoneChoice];
