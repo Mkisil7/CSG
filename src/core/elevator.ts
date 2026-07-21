@@ -32,6 +32,8 @@ export interface Boarding {
 export interface ElevatorTickResult {
   arrivals: Arrival[];
   boardings: Boarding[];
+  /** Riders who waited past their patience and gave up (took the stairs). */
+  abandonments: Arrival[];
 }
 
 /**
@@ -50,6 +52,8 @@ export class ElevatorSystem {
   doorTime = ELEVATOR.doorTime;
   /** Riders one car can hold at once (upgradable via applyTier). */
   capacity = ELEVATOR.capacity;
+  /** Minutes a rider will wait before giving up and taking the stairs. */
+  maxPatience = ELEVATOR.maxPatienceMinutes;
 
   /** Rolling average wait, game minutes. */
   private waitSamples: number[] = [];
@@ -128,7 +132,26 @@ export class ElevatorSystem {
   }
 
   tick(dt: number, now: number): ElevatorTickResult {
-    const result: ElevatorTickResult = { arrivals: [], boardings: [] };
+    const result: ElevatorTickResult = { arrivals: [], boardings: [], abandonments: [] };
+
+    // Riders who have waited past their patience give up and take the stairs.
+    // This keeps a gridlocked tower moving (nobody freezes indefinitely) and
+    // bounds the recorded wait, so the average stays believable and recovers as
+    // soon as lift capacity catches up.
+    for (const [floor, queue] of this.queues) {
+      let i = 0;
+      while (i < queue.length) {
+        const rider = queue[i];
+        if (now - rider.enqueuedAt >= this.maxPatience) {
+          queue.splice(i, 1);
+          this.recordWait(now - rider.enqueuedAt);
+          result.abandonments.push({ residentId: rider.residentId, floor: rider.to });
+        } else {
+          i++;
+        }
+      }
+      if (queue.length === 0) this.queues.delete(floor);
+    }
 
     for (const car of this.cars) {
       switch (car.state) {

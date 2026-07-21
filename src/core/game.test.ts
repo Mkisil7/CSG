@@ -35,6 +35,22 @@ describe('averageWait pooling', () => {
   });
 });
 
+describe('transit-oriented lift throughput', () => {
+  it('a transit tower carries more riders per trip and dwells less at each floor', () => {
+    const mixed = new Game('t0', new Economy());
+    const transit = new Game('t1', new Economy(), 'transit');
+    expect(transit.elevator.capacity).toBeGreaterThan(mixed.elevator.capacity);
+    expect(transit.elevator.doorTime).toBeLessThan(mixed.elevator.doorTime);
+  });
+
+  it('the throughput bonus carries onto a newly-built second shaft', () => {
+    const transit = new Game('t1', new Economy(100000), 'transit');
+    transit.townPopulation = 9999;
+    expect(transit.unlockSecondShaft()).toBe(true);
+    expect(transit.secondElevator!.capacity).toBe(transit.elevator.capacity);
+  });
+});
+
 describe('zone build gating', () => {
   it('mixed zone (the default) allows every floor type', () => {
     const g = new Game('t0', new Economy(100000), 'mixed');

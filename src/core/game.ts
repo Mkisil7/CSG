@@ -1,6 +1,7 @@
 import {
   BUSINESS,
   BusinessSubtype,
+  ELEVATOR,
   ELEVATOR_TIERS,
   FLOOR_CONFIG,
   FloorType,
@@ -109,10 +110,27 @@ export class Game {
     /** Municipal zone; constrains which floor types may be built. Default is
      *  unrestricted mixed-use, so existing saves/tests behave unchanged. */
     public readonly zone: ZoneType = 'mixed',
-  ) {}
+  ) {
+    // A Transit-zoned tower's first shaft starts with the throughput bonus too.
+    this.tuneShaft(this.elevator);
+  }
 
   shafts(): ElevatorSystem[] {
     return this.secondElevator ? [this.elevator, this.secondElevator] : [this.elevator];
+  }
+
+  /**
+   * Apply the current lift tier to a shaft, plus the Transit-Oriented throughput
+   * bonus if this lot is zoned Transit — so zoning a lot Transit visibly relieves
+   * its lift queues (more riders per trip, quicker doors), which is exactly what
+   * a player expects a "transit" building to do.
+   */
+  private tuneShaft(shaft: ElevatorSystem): void {
+    shaft.applyTier(ELEVATOR_TIERS[this.elevatorTier]);
+    if (this.zone === 'transit') {
+      shaft.capacity = Math.round(shaft.capacity * ELEVATOR.transitCapacityMultiplier);
+      shaft.doorTime *= ELEVATOR.transitDoorMultiplier;
+    }
   }
 
   // ---- player actions -------------------------------------------------
@@ -156,8 +174,7 @@ export class Game {
     const cost = this.nextSpeedTierCost()!;
     this.economy.spend(cost);
     this.elevatorTier++;
-    const tier = ELEVATOR_TIERS[this.elevatorTier];
-    for (const shaft of this.shafts()) shaft.applyTier(tier);
+    for (const shaft of this.shafts()) this.tuneShaft(shaft);
     return true;
   }
 
@@ -199,7 +216,7 @@ export class Game {
     if (!this.canUnlockSecondShaft().ok) return false;
     this.economy.spend(SECOND_SHAFT.cost);
     this.secondElevator = new ElevatorSystem(1);
-    this.secondElevator.applyTier(ELEVATOR_TIERS[this.elevatorTier]);
+    this.tuneShaft(this.secondElevator);
     return true;
   }
 
@@ -220,12 +237,18 @@ export class Game {
 
     // Lifts move people; boarding/arrival events drive resident state.
     for (const shaft of this.shafts()) {
-      const { arrivals, boardings } = shaft.tick(dt, now);
+      const { arrivals, boardings, abandonments } = shaft.tick(dt, now);
       for (const { residentId } of boardings) {
         const resident = this.residents.find((r) => r.id === residentId);
         if (resident && resident.state.kind === 'waiting') {
           resident.state = { kind: 'riding', to: resident.state.to };
         }
+      }
+      // A rider who gave up on the lift walks the stairs — they still reach
+      // their destination, just after eating the full wait penalty.
+      for (const { residentId, floor } of abandonments) {
+        const resident = this.residents.find((r) => r.id === residentId);
+        if (resident && resident.state.kind === 'waiting') this.arrive(resident, floor);
       }
       for (const { residentId, floor } of arrivals) {
         const resident = this.residents.find((r) => r.id === residentId);

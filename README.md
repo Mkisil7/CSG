@@ -45,8 +45,13 @@ needed after the first visit.
   crucially for a tall, busy tower — add a **second shaft**: one cab simply
   can't serve a big tower even at top speed, and a second lift roughly triples
   throughput. Riders pick the shaft that will arrive first, and commuters leave
-  home early enough to make their shift. (Tap the Happiness meter and it'll
-  tell you when the lifts are your bottleneck.)
+  home early enough to make their shift. A rider who waits too long **gives up
+  and takes the stairs** rather than freezing in an endless queue, so the wait
+  meter stays honest and recovers the moment you add capacity. If a tower is
+  maxed on lifts and still jammed, it's simply too dense — spread residents
+  across more towers, or zone a lot **Transit-Oriented**, whose lifts carry far
+  more people per trip. (Tap the Happiness meter and it'll tell you when the
+  lifts are your bottleneck.)
 - **Grow the town**: unlock up to nine more lots along the street (ten in all)
   and raise a whole skyline of towers. Commute time scales with real distance
   between towers, so where you put the jobs matters.
@@ -75,12 +80,13 @@ needed after the first visit.
 - **Missions**: a checklist of 100+ milestones with coin rewards (🎯 in the
   menu) — population and wealth tiers, zoning goals, business grades, career
   promotions, happiness streaks, and more. Unfinished goals sort to the top.
-- **Play with friends** (🌐 Friends): share a link and a friend can **walk
-  through your town** read-only — scroll your towers, click floors and
+- **Play with friends** (🌐 Friends): share a **visit code** and a friend can
+  **walk through your town** read-only — scroll your towers, click floors and
   residents, watch it run — then hop back to their own. **Send coin gifts** as
-  links too: it comes out of your treasury and lands in theirs when they accept.
-  It's all done with shareable codes, so there's still **no server, no account,
-  and no tracking** — the game stays free, offline, and static.
+  short codes too (e.g. `G3rs.k29fq1abc`): the coins come out of your treasury
+  and land in theirs when they redeem it. It's all done with copy-paste codes,
+  so there's still **no server, no account, and no tracking** — the game stays
+  free, offline, and static.
 - **Speed controls**: pause / 1× / 2× / 4× (top right). Come back later and
   get a "while you were away" report — the town keeps living without you (up
   to a cap).

@@ -456,7 +456,7 @@ function dragHint(label: string): string {
     case 'Entertainment':
       return 'nothing to do; add shops and bars';
     case 'Lift queues':
-      return 'one lift can’t serve a tall, busy tower even at top speed — add a 2nd lift shaft (and upgrade lift speed). Spreading residents across more towers helps too';
+      return 'a tower can outgrow its lifts. Add a 2nd shaft and max lift speed first; if it’s still jammed the tower is simply too dense — spread residents across more towers, or zone a lot Transit-Oriented (its lifts carry far more people)';
     case 'Long commutes':
       return 'jobs are too far from homes; build workplaces closer, or zone a lot Transit-Oriented for a gentler commute';
     default:

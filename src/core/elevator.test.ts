@@ -131,4 +131,39 @@ describe('ElevatorSystem', () => {
     el.applyTier({ speed: 1, doorTime: 1 });
     expect(el.capacity).toBe(ELEVATOR.capacity);
   });
+
+  it('a rider who waits past patience gives up and takes the stairs', () => {
+    const el = new ElevatorSystem(1);
+    el.maxPatience = 10; // give up after 10 game minutes
+    // One more rider than the car can carry: the overflow waits for the return
+    // trip, which takes far longer than the patience limit, so it abandons.
+    for (let i = 0; i < ELEVATOR.capacity + 1; i++) el.request(`r${i}`, 0, 5, 0);
+
+    const abandoned: { residentId: string; floor: number }[] = [];
+    let t = 0;
+    const dt = 0.5;
+    while (t < 80) {
+      t += dt;
+      abandoned.push(...el.tick(dt, t).abandonments);
+    }
+    expect(abandoned.length).toBeGreaterThan(0);
+    // Abandoners are still routed to their intended destination floor.
+    expect(abandoned.every((a) => a.floor === 5)).toBe(true);
+  });
+
+  it('patience bounds the reported average wait in a gridlocked shaft', () => {
+    const el = new ElevatorSystem(1);
+    el.maxPatience = 20;
+    // Flood the shaft far past what one slow car can serve.
+    for (let i = 0; i < 60; i++) el.request(`r${i}`, 0, 12, 0);
+    let t = 0;
+    const dt = 0.5;
+    while (t < 24 * 60) {
+      t += dt;
+      el.tick(dt, t);
+    }
+    // Without abandonment this average would climb into the hundreds/thousands;
+    // patience keeps every recorded wait at or under the limit.
+    expect(el.averageWait()).toBeLessThanOrEqual(el.maxPatience + 1);
+  });
 });

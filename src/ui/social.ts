@@ -105,17 +105,17 @@ export function openSocialPanel(town: Town, onToast: (m: string) => void): void 
   // --- share my town ---
   body.appendChild(el('div', 'social-section', 'Share your town'));
   const shareOut = el('div', 'social-out');
-  const shareBtn = el('button', 'build-btn social-action', '🔗 Create a visit link');
+  const shareBtn = el('button', 'build-btn social-action', '🔗 Create a visit code');
   shareBtn.addEventListener('click', async () => {
     shareBtn.disabled = true;
     shareBtn.textContent = 'Encoding…';
     const code = await encodeTown(town);
     shareOut.innerHTML = '';
     shareOut.appendChild(
-      copyRow('Send this link — friends open it to walk through your town', linkFor('visit', code)),
+      copyRow('Send this code — a friend pastes it under “Visit a friend” to walk your town', code),
     );
     shareBtn.disabled = false;
-    shareBtn.textContent = '🔗 Create a visit link';
+    shareBtn.textContent = '🔗 Create a visit code';
   });
   body.append(shareBtn, shareOut);
 
@@ -123,7 +123,7 @@ export function openSocialPanel(town: Town, onToast: (m: string) => void): void 
   body.appendChild(el('div', 'social-section', 'Visit a friend’s town'));
   const visitInput = el('textarea', 'social-textarea');
   visitInput.rows = 2;
-  visitInput.placeholder = 'Paste a friend’s visit link or code…';
+  visitInput.placeholder = 'Paste a friend’s visit code…';
   const visitBtn = el('button', 'build-btn social-action', '👣 Visit');
   visitBtn.addEventListener('click', () => {
     const code = extractCode(visitInput.value, 'visit');
@@ -147,7 +147,10 @@ export function openSocialPanel(town: Town, onToast: (m: string) => void): void 
       const gift = makeCoinGift(amt, getPlayerName() || undefined);
       giftOut.innerHTML = '';
       giftOut.appendChild(
-        copyRow(`Gift of ${amt} coins — send this link to a friend`, linkFor('gift', encodeGift(gift))),
+        copyRow(
+          `Gift code for ${amt} coins — a friend pastes it under “Redeem a gift”`,
+          encodeGift(gift),
+        ),
       );
       onToast(`Gift of ${amt} coins created (deducted from your treasury)`);
     });
@@ -159,7 +162,7 @@ export function openSocialPanel(town: Town, onToast: (m: string) => void): void 
   body.appendChild(el('div', 'social-section', 'Redeem a gift'));
   const redeemInput = el('textarea', 'social-textarea');
   redeemInput.rows = 2;
-  redeemInput.placeholder = 'Paste a gift link or code…';
+  redeemInput.placeholder = 'Paste a gift code…';
   const redeemBtn = el('button', 'build-btn social-action', '🎁 Redeem');
   redeemBtn.addEventListener('click', () => {
     const gift = decodeGift(extractCode(redeemInput.value, 'gift'));

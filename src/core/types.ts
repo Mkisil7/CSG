@@ -288,6 +288,21 @@ export const ELEVATOR = {
   speed: 0.34,
   /** Door open / load-unload time at each stop, in game minutes (tier-0 default). */
   doorTime: 2,
+  /**
+   * How long a rider will wait for a lift before giving up and taking the
+   * stairs. Without this, a gridlocked tower freezes riders for many hours and
+   * reports absurd average waits (1000+ min) that never recover; with it, the
+   * wait number is bounded and a rider still reaches their destination.
+   */
+  maxPatienceMinutes: 75,
+  /**
+   * Transit-Oriented zoning integrates the tower with mass transit: every shaft
+   * carries more riders per trip and dwells at each floor a little less, so a
+   * transit tower's lifts genuinely move more people (the payoff a player
+   * expects from zoning a lot Transit).
+   */
+  transitCapacityMultiplier: 1.5,
+  transitDoorMultiplier: 0.75,
 };
 
 /** How strongly an existing queue at a floor counts against a shaft's pickup ETA. */
@@ -388,7 +403,7 @@ export const ZONE_CONFIGS: Record<ZoneType, ZoneConfig> = {
   },
   transit: {
     label: 'Transit-Oriented',
-    description: 'TOD — dense mixed-use by transit; commutes feel shorter here.',
+    description: 'TOD — dense mixed-use by transit: its lifts carry far more people, and commutes feel shorter.',
     allowedFloorTypes: null,
     costMultiplier: 1.25,
     isTransit: true,

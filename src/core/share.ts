@@ -94,16 +94,33 @@ export function makeCoinGift(amount: number, from?: string): Gift {
   return { kind: 'coins', amount: Math.max(0, Math.round(amount)), from, nonce: newNonce() };
 }
 
+/**
+ * Compact, human-shareable gift code: `G<amount36>.<nonce>[.<name>]` — e.g.
+ * `G3rs.k29fq1abc.QWxleA`. A gift carries almost no data, so there's no reason
+ * to ship a big base64-JSON blob (or a full URL) for it. Amount is base-36, the
+ * nonce is already URL-safe, and the optional sender name is base64url'd so it
+ * can't collide with the `.` separators.
+ */
 export function encodeGift(gift: Gift): string {
-  return 'G' + bytesToBase64url(new TextEncoder().encode(JSON.stringify(gift)));
+  const parts = [Math.max(0, Math.round(gift.amount)).toString(36), gift.nonce];
+  if (gift.from) parts.push(bytesToBase64url(new TextEncoder().encode(gift.from)));
+  return 'G' + parts.join('.');
 }
 
 export function decodeGift(code: string): Gift | null {
   try {
-    if (code[0] !== 'G') return null;
-    const g = JSON.parse(new TextDecoder().decode(base64urlToBytes(code.slice(1)))) as Gift;
-    if (g && g.kind === 'coins' && Number.isFinite(g.amount) && g.amount >= 0 && g.nonce) return g;
-    return null;
+    const s = code.trim();
+    if (s[0] !== 'G') return null;
+    const parts = s.slice(1).split('.');
+    if (parts.length < 2 || parts.length > 3) return null;
+    const amount = parseInt(parts[0], 36);
+    const nonce = parts[1];
+    if (!Number.isFinite(amount) || amount < 0 || !nonce) return null;
+    const from =
+      parts[2] !== undefined
+        ? new TextDecoder().decode(base64urlToBytes(parts[2])) || undefined
+        : undefined;
+    return { kind: 'coins', amount, from, nonce };
   } catch {
     return null;
   }
