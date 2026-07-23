@@ -39,6 +39,42 @@ export class Hud {
   }
 }
 
+/**
+ * A slim banner under the HUD that shows any live City Events (festival, boom,
+ * recession…) with their remaining days and current effect, so the player
+ * always knows what's swinging their economy and mood right now.
+ */
+export class EventTicker {
+  private readonly root: HTMLElement;
+  private lastKey = '';
+
+  constructor(root: HTMLElement) {
+    this.root = root;
+  }
+
+  update(town: Town): void {
+    const active = town.cityEvents.active;
+    const key = active.map((e) => `${e.id}:${Math.max(0, e.endsDay - town.day)}`).join('|');
+    if (key === this.lastKey) return; // avoid rebuilding the DOM every frame
+    this.lastKey = key;
+
+    this.root.innerHTML = '';
+    for (const e of active) {
+      const daysLeft = Math.max(1, e.endsDay - town.day);
+      const pct = Math.round((e.incomeMultiplier - 1) * 100);
+      const money = pct === 0 ? '' : pct > 0 ? ` · +${pct}% takings` : ` · ${pct}% takings`;
+      const mood = e.moodBonus === 0 ? '' : e.moodBonus > 0 ? ` · +${e.moodBonus} mood` : ` · ${e.moodBonus} mood`;
+      const chip = document.createElement('div');
+      chip.className = `event-chip ${e.good ? 'event-good' : 'event-bad'}`;
+      chip.innerHTML =
+        `<span class="event-emoji">${e.emoji}</span>` +
+        `<span class="event-text"><b>${e.title}</b>${money}${mood} ` +
+        `<small>${daysLeft}d left</small></span>`;
+      this.root.appendChild(chip);
+    }
+  }
+}
+
 export class Toaster {
   private readonly root: HTMLElement;
 

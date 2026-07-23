@@ -146,6 +146,10 @@ export class Inspector {
         Math.abs(b.vibrancy) >= 0.05
           ? `<div class="insp-row">${b.vibrancy >= 0 ? '✨' : '🥀'} Business vibrancy: <b class="${b.vibrancy >= 0 ? 'grade-A' : 'grade-F'}">${b.vibrancy >= 0 ? '+' : ''}${b.vibrancy.toFixed(0)}</b></div>`
           : '';
+      const cityMoodRow =
+        Math.abs(b.cityMood) >= 0.5
+          ? `<div class="insp-row">${b.cityMood >= 0 ? '🎉' : '📉'} City events: <b class="${b.cityMood >= 0 ? 'grade-A' : 'grade-F'}">${b.cityMood >= 0 ? '+' : ''}${b.cityMood.toFixed(0)}</b></div>`
+          : '';
       // Rank every drag — needs (weighted deficit) and environment penalties —
       // on the same "happiness points lost" scale, so the advice points at
       // whatever actually hurts most (e.g. lift queues, not a lowish need).
@@ -167,8 +171,9 @@ export class Inspector {
         <div class="insp-sub">Averaged across ${b.residentCount} resident${b.residentCount === 1 ? '' : 's'}</div>
         <div class="insp-section">Needs (higher is better)</div>
         ${needBars}
-        ${penaltyRows || vibrancyRow ? '<div class="insp-section">Environment</div>' : ''}
+        ${penaltyRows || vibrancyRow || cityMoodRow ? '<div class="insp-section">Environment</div>' : ''}
         ${vibrancyRow}
+        ${cityMoodRow}
         ${penaltyRows || '<div class="insp-row insp-empty">No lift or commute strain</div>'}
         <div class="insp-section">Biggest drag</div>
         <div class="insp-row">${worst.loss < 4 ? '😊 Everyone is pretty content' : `<b>${escapeHtml(worst.label)}</b> — ${dragHint(worst.label)}`}</div>`;
@@ -442,6 +447,8 @@ function eventIcon(kind: GameEventKind): string {
       return '🏗️';
     case 'mission':
       return '🎯';
+    case 'event':
+      return '🎪';
   }
 }
 

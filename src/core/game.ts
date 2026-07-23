@@ -26,7 +26,8 @@ export type GameEventKind =
   | 'promotion'
   | 'job-switch'
   | 'build'
-  | 'mission';
+  | 'mission'
+  | 'event';
 
 export interface GameEvent {
   kind: GameEventKind;
@@ -45,6 +46,7 @@ const TOAST_WORTHY: ReadonlySet<GameEventKind> = new Set<GameEventKind>([
   'job-switch',
   'build',
   'mission',
+  'event',
 ]);
 
 export function isToastWorthy(kind: GameEventKind): boolean {

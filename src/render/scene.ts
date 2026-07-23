@@ -1,7 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { MINUTES_PER_DAY } from '../core/types';
 import { FLOOR_HEIGHT, TOWER_SLOT_ORIGINS, TOWER_SPACING } from './layout';
+import { Sky } from './sky';
 
 export interface SceneContext {
   renderer: THREE.WebGLRenderer;
@@ -10,6 +15,8 @@ export interface SceneContext {
   controls: OrbitControls;
   sun: THREE.DirectionalLight;
   ambient: THREE.HemisphereLight;
+  sky: Sky;
+  composer: EffectComposer;
 }
 
 const SKY_DAY = new THREE.Color(0xbfe3f2);
@@ -34,10 +41,14 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_COARSE_POINTER ? 1.5 : 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Filmic tone mapping + bloom give the town a soft, cinematic glow (especially
+  // the warm windows and celestial bodies at night).
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
   scene.background = SKY_DAY.clone();
-  scene.fog = new THREE.Fog(SKY_DAY.clone(), 170, 470);
+  scene.fog = new THREE.Fog(SKY_DAY.clone(), 190, 460);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 500);
   camera.position.set(18, 14, 34);
@@ -73,10 +84,26 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
 
   addGround(scene);
 
+  const sky = new Sky(scene);
+
+  // Post-processing: render → bloom → tone-map/output.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(1, 1),
+    IS_COARSE_POINTER ? 0.5 : 0.7, // strength
+    0.6, // radius
+    0.82, // luminance threshold — only bright things (windows, sun, fireworks) bloom
+  );
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
   const resize = () => {
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
     renderer.setSize(w, h, false);
+    composer.setSize(w, h);
+    bloom.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   };
@@ -112,7 +139,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneContext {
   canvas.addEventListener('pointercancel', dropPointer);
   canvas.addEventListener('pointerleave', dropPointer);
 
-  return { renderer, scene, camera, controls, sun, ambient };
+  return { renderer, scene, camera, controls, sun, ambient, sky, composer };
+}
+
+/** Render the scene through the post-processing chain (bloom + tone map). */
+export function renderScene(ctx: SceneContext): void {
+  ctx.composer.render();
 }
 
 function addGround(scene: THREE.Scene): void {
@@ -171,14 +203,21 @@ function addGround(scene: THREE.Scene): void {
  * park lamps) off the same value.
  */
 export function updateDaylight(ctx: SceneContext, timeOfDay: number): number {
-  const t = 0.5 - 0.5 * Math.cos((timeOfDay / MINUTES_PER_DAY) * Math.PI * 2);
+  const dayFrac = timeOfDay / MINUTES_PER_DAY;
+  const t = 0.5 - 0.5 * Math.cos(dayFrac * Math.PI * 2);
   const daylight = Math.min(1, Math.max(0, (t - 0.15) / 0.5));
 
   (ctx.scene.background as THREE.Color).lerpColors(SKY_NIGHT, SKY_DAY, daylight);
   ctx.scene.fog?.color.copy(ctx.scene.background as THREE.Color);
   ctx.sun.color.lerpColors(SUN_NIGHT, SUN_DAY, daylight);
   ctx.sun.intensity = 0.25 + 1.35 * daylight;
-  ctx.ambient.intensity = 0.35 + 0.6 * daylight;
+  ctx.ambient.intensity = 0.4 + 0.6 * daylight;
+
+  // Drive the painterly sky (dome gradient, sun/moon arc, stars), kept centred
+  // on wherever the camera is looking so it always surrounds the view.
+  ctx.sky.update(daylight, dayFrac, ctx.controls.target.x);
+  // Fog fades distant towers into the sky's horizon tone for a seamless blend.
+  ctx.scene.fog?.color.lerpColors(SKY_NIGHT, SKY_DAY, daylight);
   return daylight;
 }
 

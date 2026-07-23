@@ -17,6 +17,7 @@ export function updateHappinessAndEvict(
   games: Game[],
   currentDay: number,
   parkOrigins: { x: number; z: number }[] = [],
+  cityMoodBonus = 0,
 ): GameEvent[] {
   const events: GameEvent[] = [];
   const all = games.flatMap((g) => g.residents);
@@ -112,7 +113,8 @@ export function updateHappinessAndEvict(
         w.food * resident.needs.food +
         w.entertainment * resident.needs.entertainment +
         vibrancy +
-        parkBonus -
+        parkBonus +
+        cityMoodBonus -
         waitPenalty -
         commutePenalty,
       0,
@@ -209,6 +211,8 @@ export interface HappinessBreakdown {
   penalties: { label: string; value: number }[];
   /** Average business-vibrancy adjustment (can be negative). */
   vibrancy: number;
+  /** Net happiness swing from active City Events (can be negative). */
+  cityMood: number;
 }
 
 /**
@@ -236,6 +240,7 @@ export function happinessBreakdown(town: Town): HappinessBreakdown {
         { label: 'Long commutes', value: 0 },
       ],
       vibrancy: 0,
+      cityMood: town.cityEvents.moodBonus(),
     };
   }
 
@@ -286,5 +291,6 @@ export function happinessBreakdown(town: Town): HappinessBreakdown {
       { label: 'Long commutes', value: commuteSum / n },
     ],
     vibrancy: vibSum / n,
+    cityMood: town.cityEvents.moodBonus(),
   };
 }

@@ -67,6 +67,13 @@ needed after the first visit.
   shops benefit most.
 - **Parks**: an Open-Space lot builds no tower but lifts the mood of residents
   in nearby towers, and its lamp posts glow after dark.
+- **Live City Events**: something is always happening. Street festivals and
+  tourism surges pack your shops and lift the mood; economic booms and celebrity
+  move-ins juice takings; recessions, heat waves and rainy spells test you. A
+  ticker up top shows what's live and its effect, and after dark a **festival
+  sets off fireworks** over the skyline. Every window glows warm at night, the
+  sky arcs from dawn through dusk to a starry night, and a sun and moon cross
+  overhead — all with a soft cinematic bloom.
 - **Evenings are alive**: after work, residents keep going out — dinner at a
   restaurant, a drink at a Bar & Lounge, some evening shopping — re-deciding
   through the night until their (staggered) bedtimes, so the town's busiest,

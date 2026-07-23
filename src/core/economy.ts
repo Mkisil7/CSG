@@ -10,19 +10,27 @@ export class Economy {
   coins: number;
   incomeToday = 0;
 
+  /**
+   * Town-wide multiplier on foot-traffic income, driven by live City Events
+   * (a festival or boom lifts it, a recession drags it down). 1 = normal;
+   * ephemeral, set each tick by the event system, never persisted.
+   */
+  eventMultiplier = 1;
+
   constructor(coins = ECONOMY.startingCoins) {
     this.coins = coins;
   }
 
   /**
    * Called when a resident actually arrives at a shop or restaurant.
-   * The multiplier folds in business quality, subtype, and shopper happiness.
+   * The multiplier folds in business quality, subtype, and shopper happiness;
+   * the active City-Event multiplier scales the whole town's takings on top.
    */
   recordVisit(kind: ActivityKind, multiplier = 1): number {
     let income = 0;
     if (kind === 'shop') income = ECONOMY.shopVisitIncome;
     if (kind === 'eat') income = ECONOMY.restaurantVisitIncome;
-    income = Math.round(income * multiplier * 100) / 100;
+    income = Math.round(income * multiplier * this.eventMultiplier * 100) / 100;
     this.earn(income);
     return income;
   }

@@ -9,9 +9,11 @@ import {
   enterTowerLock,
   exitTowerLock,
   isTowerLocked,
+  renderScene,
   updateDaylight,
   updateTowerCam,
 } from './render/scene';
+import { Fireworks } from './render/fireworks';
 import { FloorViews, setWindowGlow } from './render/floors';
 import { CharacterViews, ShaftRef } from './render/characters';
 import { ElevatorViews } from './render/elevatorView';
@@ -26,7 +28,7 @@ import {
   WAIT_X_RIGHT,
 } from './render/layout';
 import { PickingController } from './input/picking';
-import { Hud, Toaster } from './ui/hud';
+import { EventTicker, Hud, Toaster } from './ui/hud';
 import { BuildMenu } from './ui/buildMenu';
 import { Inspector } from './ui/inspector';
 import { SpeedControl } from './ui/speedControl';
@@ -87,6 +89,7 @@ async function start(): Promise<void> {
   const bundles = new Map<string, TowerViewBundle>();
   const parkViews = new Map<string, ParkView>();
   const plots = new PlotViews(ctx.scene);
+  const fireworks = new Fireworks(ctx.scene);
 
   function ensureBundles(): void {
     town.slots.forEach((slot, slotIndex) => {
@@ -138,6 +141,7 @@ async function start(): Promise<void> {
     inspector.select({ kind: 'happiness' }),
   );
   const toaster = new Toaster(document.getElementById('toast')!);
+  const eventTicker = new EventTicker(document.getElementById('event-ticker')!);
   const speedControl = new SpeedControl(document.getElementById('speed-control')!);
 
   const onChanged = () => {
@@ -275,8 +279,10 @@ async function start(): Promise<void> {
     setWindowGlow(daylight);
     ensureParkViews();
     for (const park of parkViews.values()) park.updateNight(daylight);
+    fireworks.update(town.cityEvents.hasFestive(), 1 - daylight, ctx.controls.target.x, realDt);
 
     hud.update(town, focusedGame());
+    eventTicker.update(town);
     buildMenu?.update(focusedSlot !== null, town.missions.completedCount, MISSION_DEFS.length);
 
     inspectorTimer += realDt;
@@ -297,7 +303,7 @@ async function start(): Promise<void> {
     } else {
       ctx.controls.update();
     }
-    ctx.renderer.render(ctx.scene, ctx.camera);
+    renderScene(ctx);
     requestAnimationFrame(frame);
   }
 

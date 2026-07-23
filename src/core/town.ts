@@ -21,6 +21,7 @@ import {
 } from './business';
 import { updateHappinessAndEvict } from './happiness';
 import { Missions } from './missions';
+import { CityEventSystem } from './events';
 import { TOWER_SLOT_ORIGINS } from './townLayout';
 
 /** How many recent events the Activity feed retains. */
@@ -46,6 +47,8 @@ export class Town {
   slots: TownSlot[];
   economy = new Economy();
   missions = new Missions();
+  /** Live "City Events" director (festivals, booms, recessions). Not persisted. */
+  cityEvents = new CityEventSystem();
 
   /** Total game minutes elapsed since the town opened. */
   time = 8 * 60; // day 1 starts at 08:00 so things happen right away
@@ -216,6 +219,17 @@ export class Town {
     const prevDay = this.day;
     this.time += dt;
 
+    // Live City Events: start/expire happenings and publish their combined
+    // effect (income multiplier now, mood bonus consumed at day rollover).
+    const { started, ended } = this.cityEvents.update(this.day);
+    for (const e of started) {
+      this.events.push({ kind: 'event', message: `${e.emoji} ${e.title} — ${e.blurb}` });
+    }
+    for (const e of ended) {
+      this.events.push({ kind: 'event', message: `${e.emoji} ${e.title} has wrapped up.` });
+    }
+    this.economy.eventMultiplier = this.cityEvents.incomeMultiplier();
+
     if (this.day !== prevDay) this.dayRollover();
 
     this.handleMoveIns(dt);
@@ -272,7 +286,9 @@ export class Town {
     }
     this.events.push(...processPromotions(this.contexts(), this.day));
     updateBusinessDay(this.contexts(), this.economy);
-    this.events.push(...updateHappinessAndEvict(games, this.day, this.parkOrigins()));
+    this.events.push(
+      ...updateHappinessAndEvict(games, this.day, this.parkOrigins(), this.cityEvents.moodBonus()),
+    );
     this.events.push(...this.missions.checkDaily(this));
     resetBusinessDay(this.contexts());
     resetDailyFlags(this.allResidents());

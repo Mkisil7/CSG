@@ -29,7 +29,7 @@ const BACK_Z = -ROOM_DEPTH / 2;
 const MAT = {
   slab: new THREE.MeshLambertMaterial({ color: 0xffffff }),
   trim: new THREE.MeshLambertMaterial({ color: 0xfdfaf3 }),
-  window: new THREE.MeshLambertMaterial({ color: 0x9fc9e8 }),
+  window: new THREE.MeshLambertMaterial({ color: 0x9fc9e8, emissive: 0xffcf8f, emissiveIntensity: 0 }),
   windowFrame: new THREE.MeshLambertMaterial({ color: 0xfdfdfd }),
   rail: new THREE.MeshLambertMaterial({ color: 0x8d99ae }),
   shaftBack: new THREE.MeshLambertMaterial({ color: 0xb8c0d0 }),
@@ -64,7 +64,10 @@ const NIGHT_WINDOW = new THREE.Color(0xffcf8f);
  * this lights every window town-wide in a single per-frame assignment.
  */
 export function setWindowGlow(daylight: number): void {
-  MAT.window.color.lerpColors(NIGHT_WINDOW, DAY_WINDOW, Math.max(0, Math.min(1, daylight)));
+  const d = Math.max(0, Math.min(1, daylight));
+  MAT.window.color.lerpColors(NIGHT_WINDOW, DAY_WINDOW, d);
+  // After dark the windows emit a warm glow so they bloom into the night.
+  MAT.window.emissiveIntensity = (1 - d) * 1.5;
 }
 
 function box(
