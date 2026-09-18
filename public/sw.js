@@ -12,7 +12,7 @@
  *    populated on first fetch. New deploys ship new hashed filenames, so fresh
  *    assets are fetched-and-cached automatically the next time you're online.
  */
-const CACHE = 'tower-town-v4';
+const CACHE = 'tower-town-v5';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 /*
@@ -24,6 +24,16 @@ const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
 async function precache() {
   const cache = await caches.open(CACHE);
   const urls = new Set(APP_SHELL);
+  try {
+    const res = await fetch('./.vite/manifest.json', { cache: 'no-cache' });
+    const manifest = await res.json();
+    for (const entry of Object.values(manifest)) {
+      if (entry.file) urls.add('./' + entry.file);
+      for (const asset of [...(entry.css || []), ...(entry.assets || [])]) urls.add('./' + asset);
+    }
+  } catch {
+    // HTML discovery still covers the shell if the manifest is unavailable.
+  }
   try {
     const res = await fetch('./index.html', { cache: 'no-cache' });
     const html = await res.text();

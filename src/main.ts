@@ -59,20 +59,11 @@ import { RoomLifeViews } from './render/roomLife';
 import { visualDelta } from './render/motion';
 import { RoomControls, roomCaption } from './ui/roomControls';
 import { SaveStatus, showLoadFailure } from './ui/saveStatus';
+import { loadingMessage } from './ui/loading';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = createScene(canvas);
 void preloadAssets();
-
-// Register the service worker so the game installs and runs fully offline.
-// Production only, so `npm run dev`'s unhashed modules are never cached.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {
-      // Offline support is a progressive enhancement — ignore registration failures.
-    });
-  });
-}
 
 interface TowerViewBundle {
   slotIndex: number;
@@ -85,9 +76,8 @@ interface TowerViewBundle {
   queues: QueueViews;
 }
 
-void start();
-
-async function start(): Promise<void> {
+export async function start(): Promise<void> {
+  loadingMessage('Opening your neighborhood…');
   const params = new URLSearchParams(location.search);
   const previewModule: {
     createPreviewTown(): Town;
@@ -97,7 +87,8 @@ async function start(): Promise<void> {
     openingReducedMotion?: () => boolean | undefined;
     awayRealSeconds?: () => number;
     isPaused?: () => boolean;
-  } | null = import.meta.env.DEV && (params.get('preview') === 'weather' || params.get('preview') === 'sound') ? await import('./dev/weatherPreview') :
+  } | null = import.meta.env.DEV && params.get('preview') === 'loading' ? { createPreviewTown: () => new Town(), mountPreview: () => {} } :
+    import.meta.env.DEV && (params.get('preview') === 'weather' || params.get('preview') === 'sound') ? await import('./dev/weatherPreview') :
     import.meta.env.DEV && params.get('preview') === 'neighborhood' ? await import('./dev/neighborhoodPreview') :
     import.meta.env.DEV && params.get('preview') === 'hosts' ? await import('./dev/hostPreview') :
     import.meta.env.DEV && params.get('preview') === 'care' ? await import('./dev/carePreview') :
@@ -142,6 +133,7 @@ async function start(): Promise<void> {
   let returnReport: OfflineReport | undefined;
   const awayRealSeconds = loaded?.awayRealSeconds ?? previewModule?.awayRealSeconds?.() ?? 0;
   if (awayRealSeconds >= OFFLINE.minAwayRealSeconds) {
+    loadingMessage('Catching up with the neighbors…');
     const progress = showCatchupProgress(document.getElementById('offline-modal')!);
     try {
       returnReport = await runOfflineCatchupAsync(town, offlineGameMinutes(awayRealSeconds), awayRealSeconds,
@@ -151,6 +143,7 @@ async function start(): Promise<void> {
     if (loaded) persist();
   }
 
+  loadingMessage('Lighting the windows…');
   const bundles = new Map<string, TowerViewBundle>();
   const parkViews = new Map<string, ParkView>();
   const plots = new PlotViews(ctx.scene);
@@ -509,7 +502,10 @@ async function start(): Promise<void> {
   }
 
   setFocus(0);
-  requestAnimationFrame(frame);
+  // Resolve after a real frame renders; startup errors reach the retry UI.
+  await new Promise<void>((resolve, reject) => requestAnimationFrame((now) => {
+    try { frame(now); resolve(); } catch (error) { reject(error); }
+  }));
 
   window.addEventListener('beforeunload', persist);
   window.addEventListener('pagehide', persist);

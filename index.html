@@ -4,22 +4,56 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Tower Town</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏢</text></svg>"
-    />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
     <!-- Installable, offline-capable PWA metadata -->
     <link rel="manifest" href="manifest.webmanifest" />
-    <meta name="theme-color" content="#9a8fe0" />
+    <meta name="theme-color" content="#203d48" />
     <link rel="apple-touch-icon" href="icon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Tower Town" />
     <link rel="stylesheet" href="/src/ui/style.css" />
+    <link rel="stylesheet" href="/src/ui/loading.css" />
   </head>
   <body>
-    <div id="app">
+    <section id="loading-screen" class="loading-screen" aria-label="Welcome to Tower Town">
+      <div class="loading-stars" aria-hidden="true"></div>
+      <div class="loading-horizon" aria-hidden="true"></div>
+      <div class="loading-content">
+        <p class="loading-eyebrow">A LITTLE PLACE TO CALL YOUR OWN</p>
+        <svg class="loading-mark" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="98" r="82" fill="#ffe0a0" opacity=".07" />
+          <path d="M37 165V90h42v75M125 165V112h38v53" fill="#446269" />
+          <path d="M63 165V51h74v114" fill="#edd5af" />
+          <path d="M57 49h86v12H57z" fill="#fff0cd" />
+          <path d="M75 40h50v9H75z" fill="#b67e61" />
+          <path d="M101 22v18" stroke="#edd5af" stroke-width="3" />
+          <path d="M103 23h18l-5 6h-13" fill="#dd9d75" />
+          <g class="loading-windows" fill="#ffc979">
+            <path d="M77 72h13v16H77zM109 72h13v16h-13z" />
+            <path d="M77 99h13v16H77zM109 99h13v16h-13z" />
+            <path d="M77 126h13v16H77zM109 126h13v16h-13z" />
+            <path d="M46 103h9v13h-9zM46 129h9v13h-9zM146 126h9v13h-9z" />
+          </g>
+          <path d="M93 165v-14a7 7 0 0 1 14 0v14" fill="#35555b" />
+          <path d="M27 167h146" stroke="#a6b9a4" stroke-width="3" stroke-linecap="round" />
+          <path d="M159 167v-19M35 167v-19" stroke="#a6b9a4" stroke-width="3" />
+          <circle cx="159" cy="147" r="10" fill="#799789" /><circle cx="35" cy="145" r="12" fill="#799789" />
+        </svg>
+        <h1 class="tower-wordmark">Tower<span>Town<span class="brand-spark" aria-hidden="true">✦</span></span></h1>
+        <p class="loading-tagline">Little windows. Big stories.</p>
+        <div class="loading-state">
+          <div class="loading-lights" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+          <p id="loading-message" role="status" aria-live="polite">Waking the neighbors…</p>
+          <p id="loading-help" hidden></p>
+          <button id="loading-retry" type="button" hidden>Try again</button>
+        </div>
+      </div>
+      <p class="loading-footer">BUILD A TOWN. MAKE IT HOME.</p>
+      <noscript><p class="loading-noscript">Turn on JavaScript to open your town.</p></noscript>
+    </section>
+    <div id="app" inert aria-busy="true">
       <canvas id="game-canvas"></canvas>
       <div id="hud"></div>
       <div id="event-ticker"></div>
@@ -32,6 +66,6 @@
       <div id="save-status"></div>
       <div id="toast"></div>
     </div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/boot.ts"></script>
   </body>
 </html>

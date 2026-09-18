@@ -1,0 +1,66 @@
+/* Static HTML lets the welcome screen paint before the game downloads. */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  isolation: isolate;
+  min-height: 100%;
+  padding: max(32px, env(safe-area-inset-top)) 24px max(64px, env(safe-area-inset-bottom));
+  background: radial-gradient(ellipse at 50% 65%, #546c69 0, #304e56 42%, #1a303f 100%);
+  color: #fff0d3;
+  text-align: center;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  opacity: 1;
+  transition: opacity 380ms ease;
+}
+.loading-screen.is-ready { opacity: 0; pointer-events: none; }
+.loading-content { position: relative; width: min(100%, 420px); margin: auto; }
+.loading-eyebrow { font-size: 9px; letter-spacing: .25em; line-height: 1.8; color: #bdccc3; }
+.loading-mark { width: clamp(120px, 22vh, 180px); height: auto; display: block; margin: 24px auto 0; }
+.tower-wordmark { font: 600 clamp(54px, 13vw, 76px)/.86 Georgia, 'Times New Roman', serif; letter-spacing: -.065em; text-shadow: 0 3px 0 #172f3b30; }
+.tower-wordmark > span { display: block; position: relative; width: fit-content; margin: 4px auto 0; }
+.brand-spark { position: absolute; top: 8px; right: -26px; font: 22px Georgia, serif; color: #edb783; }
+.loading-tagline { color: #d9dccc; font: italic 16px/1.6 Georgia, serif; margin-top: 22px; }
+.loading-state { margin: 32px auto 0; max-width: 320px; min-height: 62px; }
+#loading-message { font-size: 12px; line-height: 1.6; color: #d6dfd5; margin-top: 13px; }
+.loading-lights { display: flex; justify-content: center; gap: 7px; }
+.loading-lights i { width: 5px; height: 8px; border-radius: 1px; background: #ffd392; animation: window-light 2.4s ease-in-out infinite; }
+.loading-lights i:nth-child(2) { animation-delay: .2s; }
+.loading-lights i:nth-child(3) { animation-delay: .4s; }
+.loading-lights i:nth-child(4) { animation-delay: .6s; }
+.loading-lights i:nth-child(5) { animation-delay: .8s; }
+.loading-windows path { animation: window-light 3.6s ease-in-out infinite; }
+.loading-windows path:nth-child(2) { animation-delay: .6s; }
+.loading-windows path:nth-child(3) { animation-delay: 1.2s; }
+.loading-windows path:nth-child(4) { animation-delay: 1.8s; }
+@keyframes window-light { 0%, 100% { opacity: .3; } 40%, 65% { opacity: 1; } }
+.loading-stars { position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(circle at 16% 19%, #e3e4c6 0 1px, transparent 1.5px), radial-gradient(circle at 80% 26%, #e3e4c6 0 1px, transparent 1.5px), radial-gradient(circle at 68% 12%, #e3e4c680 0 1px, transparent 1.5px), radial-gradient(circle at 29% 39%, #e3e4c660 0 1px, transparent 1.5px), radial-gradient(circle at 88% 61%, #e3e4c660 0 1px, transparent 1.5px); }
+.loading-horizon { position: absolute; inset: auto 0 0; height: 20%; z-index: -1; background: #1a3841; opacity: .45; clip-path: polygon(0 50%, 6% 50%, 6% 28%, 13% 28%, 13% 62%, 21% 62%, 21% 42%, 29% 42%, 29% 74%, 39% 74%, 39% 60%, 46% 60%, 46% 79%, 57% 79%, 57% 67%, 68% 67%, 68% 43%, 76% 43%, 76% 58%, 84% 58%, 84% 20%, 91% 20%, 91% 49%, 100% 49%, 100% 100%, 0 100%); }
+.loading-footer { position: absolute; bottom: max(24px, env(safe-area-inset-bottom)); left: 16px; right: 16px; color: #a7beb5; font-size: 8px; letter-spacing: .22em; }
+#loading-help { font-size: 12px; line-height: 1.6; margin-top: 8px; color: #d6dfd5; }
+#loading-retry, .loading-preview-controls button { margin-top: 16px; min-height: 44px; padding: 10px 24px; border-radius: 24px; border: 1px solid #edce9d; background: #f5dfb7; color: #233f46; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+#loading-retry:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+.loading-screen.is-error .loading-lights { display: none; }
+.loading-screen.is-error .loading-windows path { animation: none; }
+.loading-noscript { position: fixed; bottom: 55px; left: 16px; right: 16px; padding: 12px; background: #203d48; font-size: 14px; }
+.loading-preview-controls { position: fixed; top: 8px; right: 8px; z-index: 101; display: flex; gap: 8px; }
+.loading-preview-controls button { font-size: 11px; padding: 6px 12px; margin: 0; }
+@media (max-height: 650px) {
+  .loading-screen { padding-top: 24px; padding-bottom: 50px; }
+  .loading-mark { width: 110px; margin-top: 10px; }
+  .tower-wordmark { font-size: 52px; }
+  .loading-tagline { margin-top: 15px; }
+  .loading-state { margin-top: 20px; }
+}
+@media (max-height: 440px) {
+  .loading-mark { width: 96px; position: absolute; left: 0; top: 20px; }
+  .loading-eyebrow, .loading-footer { display: none; }
+  .loading-state { margin-top: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-screen { transition: none; }
+  .loading-windows path, .loading-lights i { animation: none; }
+}
