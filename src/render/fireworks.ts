@@ -1,115 +1,204 @@
 import * as THREE from 'three';
 
-/**
- * Celebratory fireworks that burst over the skyline while a festive City Event
- * (a Street Festival or grand-opening buzz) is running after dark. Each burst is
- * a short-lived cloud of additive points that rockets up, explodes, and drifts
- * down under gravity — bloom makes them pop. Pure eye-candy, pooled so it never
- * allocates during play.
- */
+const MAX_BURSTS = 4;
+const SPARKS = 56;
+const TRAIL_SAMPLES = 4;
+const ROCKET_SAMPLES = 9;
+const DRAG = 0.65;
+const GRAVITY = 2.2;
+const COLORS = [0xffd58b, 0xf59c8b, 0x9edcca, 0xaccbf3, 0xd8b8ed];
 
-const MAX_BURSTS = 6;
-const PARTICLES_PER_BURST = 44;
-const GRAVITY = -9;
-const BURST_COLORS = [0xffd166, 0xef476f, 0x06d6a0, 0x8ecae6, 0xf78c6b, 0xc792ea];
-
+type SparkPoints = THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
 interface Burst {
-  points: THREE.Points;
+  rocket: SparkPoints;
+  sparks: SparkPoints;
   velocities: Float32Array;
-  life: number; // seconds remaining
-  maxLife: number;
+  age: number;
+  launchDuration: number;
+  burstDuration: number;
+  x: number;
+  y: number;
+  z: number;
+  launchY: number;
+  drift: number;
   active: boolean;
 }
 
-export class Fireworks {
-  private bursts: Burst[] = [];
-  private cooldown = 0;
+/** One shared soft disc: a point has no square corners, even when zoomed in. */
+function sparkTexture(): THREE.DataTexture {
+  const size = 32, data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const radius = Math.hypot((x + 0.5) / size * 2 - 1, (y + 0.5) / size * 2 - 1);
+      const offset = (y * size + x) * 4;
+      data[offset] = data[offset + 1] = data[offset + 2] = 255;
+      data[offset + 3] = Math.round(255 * Math.pow(Math.max(0, 1 - radius * radius), 2));
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
 
-  constructor(private scene: THREE.Scene) {
-    for (let i = 0; i < MAX_BURSTS; i++) this.bursts.push(this.makeBurst());
+/** Quiet, pooled skyline celebrations. Visual seconds do not accelerate at 4×. */
+export class Fireworks {
+  private readonly texture = sparkTexture();
+  private readonly bursts: Burst[] = [];
+  private readonly preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+  private cooldown = 0.6;
+  private disposed = false;
+  private readonly onMotionChange = () => {
+    if (this.preference.matches) this.clear();
+  };
+
+  constructor(private scene: THREE.Scene, private random: () => number = Math.random) {
+    this.preference.addEventListener('change', this.onMotionChange);
+    for (let i = 0; i < MAX_BURSTS; i++) {
+      this.bursts.push({
+        rocket: this.makePoints(`firework-rocket:${i}`, 1, ROCKET_SAMPLES, 4.5),
+        sparks: this.makePoints(`firework-burst:${i}`, SPARKS, TRAIL_SAMPLES, 4),
+        velocities: new Float32Array(SPARKS * 3),
+        age: 0, launchDuration: 1, burstDuration: 2,
+        x: 0, y: 0, z: 0, launchY: 0, drift: 0, active: false,
+      });
+    }
   }
 
-  private makeBurst(): Burst {
-    const positions = new Float32Array(PARTICLES_PER_BURST * 3);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const mat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 1.3,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-    });
-    const points = new THREE.Points(geo, mat);
+  private makePoints(name: string, count: number, samples: number, size: number): SparkPoints {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * samples * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const colors = new Float32Array(count * samples * 3);
+    for (let i = 0; i < count * samples; i++) {
+      const brightness = Math.pow(1 - (i % samples) / samples, 2.5);
+      colors.fill(brightness, i * 3, i * 3 + 3);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const points = new THREE.Points(geometry, new THREE.PointsMaterial({
+      map: this.texture, size, sizeAttenuation: false, vertexColors: true,
+      transparent: true, opacity: 0, depthWrite: false, depthTest: true,
+      blending: THREE.AdditiveBlending, fog: false,
+    }));
+    points.name = name;
     points.visible = false;
     points.frustumCulled = false;
     this.scene.add(points);
-    return { points, velocities: new Float32Array(PARTICLES_PER_BURST * 3), life: 0, maxLife: 1, active: false };
+    return points;
   }
 
-  private ignite(x: number): void {
-    const burst = this.bursts.find((b) => !b.active);
+  private launch(centerX: number, roofHeight: number): void {
+    const burst = this.bursts.find((candidate) => !candidate.active);
     if (!burst) return;
-    const cx = x + (Math.random() - 0.5) * 20;
-    const cy = 26 + Math.random() * 22;
-    const cz = (Math.random() - 0.5) * 20;
-    const pos = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < PARTICLES_PER_BURST; i++) {
-      pos.setXYZ(i, cx, cy, cz);
-      // Random direction on a sphere, varied speed → a round burst.
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const speed = 5 + Math.random() * 7;
-      burst.velocities[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
-      burst.velocities[i * 3 + 1] = Math.cos(phi) * speed;
-      burst.velocities[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * speed;
-    }
-    pos.needsUpdate = true;
-    (burst.points.material as THREE.PointsMaterial).color.setHex(
-      BURST_COLORS[Math.floor(Math.random() * BURST_COLORS.length)],
-    );
-    burst.maxLife = 1.4 + Math.random() * 0.7;
-    burst.life = burst.maxLife;
+    burst.x = centerX + (this.random() - 0.5) * 28;
+    burst.y = roofHeight + 10 + this.random() * 9;
+    // All sparks stay behind the cutaway rooms, not between the camera and people.
+    burst.z = -20 - this.random() * 6;
+    burst.launchY = Math.max(3, roofHeight - 6);
+    burst.drift = (this.random() - 0.5) * 3;
+    burst.launchDuration = 0.85 + this.random() * 0.3;
+    burst.burstDuration = 2 + this.random() * 0.5;
+    burst.age = 0;
     burst.active = true;
-    burst.points.visible = true;
+    burst.sparks.visible = false;
+    burst.rocket.material.color.setHex(0xffdca0);
+    burst.sparks.material.color.setHex(COLORS[Math.floor(this.random() * COLORS.length)]);
+    for (let i = 0; i < SPARKS; i++) {
+      // Evenly spread directions, with small seeded irregularities and varied reach.
+      const vertical = 1 - 2 * (i + 0.5) / SPARKS;
+      const angle = i * Math.PI * (3 - Math.sqrt(5)) + this.random() * 0.18;
+      const speed = 4.2 + this.random() * 2.5;
+      const radial = Math.sqrt(1 - vertical * vertical);
+      burst.velocities[i * 3] = Math.cos(angle) * radial * speed;
+      burst.velocities[i * 3 + 1] = vertical * speed;
+      burst.velocities[i * 3 + 2] = Math.sin(angle) * radial * speed * 0.5;
+    }
   }
 
-  /**
-   * @param active  whether a festive event is running.
-   * @param night   0..1 darkness (fireworks only after dusk).
-   * @param centerX world-x of the town centre to burst above.
-   * @param dt      real seconds since last frame.
-   */
-  update(active: boolean, night: number, centerX: number, dt: number): void {
-    if (active && night > 0.45) {
-      this.cooldown -= dt;
-      if (this.cooldown <= 0) {
-        this.ignite(centerX);
-        this.cooldown = 0.5 + Math.random() * 1.1;
+  private draw(burst: Burst, night: number): void {
+    if (burst.age < burst.launchDuration) {
+      burst.rocket.visible = true;
+      const positions = burst.rocket.geometry.getAttribute('position') as THREE.BufferAttribute;
+      for (let sample = 0; sample < ROCKET_SAMPLES; sample++) {
+        const t = Math.max(0, (burst.age - sample * 0.018) / burst.launchDuration);
+        const ascent = 1 - (1 - t) * (1 - t);
+        positions.setXYZ(sample, burst.x - burst.drift * (1 - t), burst.launchY + (burst.y - burst.launchY) * ascent, burst.z);
+      }
+      positions.needsUpdate = true;
+      burst.rocket.material.opacity = Math.min(1, burst.age / 0.12) * night * 0.9;
+      return;
+    }
+    burst.rocket.visible = false;
+    burst.sparks.visible = true;
+    const elapsed = burst.age - burst.launchDuration;
+    const positions = burst.sparks.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < SPARKS; i++) {
+      for (let sample = 0; sample < TRAIL_SAMPLES; sample++) {
+        // Analytic trajectories keep the curve independent of display frame rate.
+        // Tail samples grow with the burst, avoiding a bright stack at its origin.
+        const t = elapsed * (1 - sample * 0.065);
+        const reach = (1 - Math.exp(-DRAG * t)) / DRAG;
+        positions.setXYZ(i * TRAIL_SAMPLES + sample,
+          burst.x + burst.velocities[i * 3] * reach,
+          burst.y + burst.velocities[i * 3 + 1] * reach - 0.5 * GRAVITY * t * t,
+          burst.z + burst.velocities[i * 3 + 2] * reach);
       }
     }
+    positions.needsUpdate = true;
+    const fadeIn = Math.min(1, elapsed / 0.18);
+    const fadeOut = Math.pow(Math.max(0, 1 - elapsed / burst.burstDuration), 1.15);
+    burst.sparks.material.opacity = fadeIn * fadeOut * night;
+  }
 
+  private clear(): void {
+    for (const burst of this.bursts) {
+      burst.active = false;
+      burst.rocket.visible = burst.sparks.visible = false;
+    }
+    this.cooldown = 0.6;
+  }
+
+  /** Pass dt=0 when paused. Existing bursts finish when a festival ends. */
+  update(active: boolean, night: number, centerX: number, dt: number, roofHeight = 24): void {
+    if (this.disposed) return;
+    night = Number.isFinite(night) ? Math.max(0, Math.min(1, night)) : 0;
+    if (this.preference.matches || night <= 0.45) { this.clear(); return; }
+    if (!Number.isFinite(dt) || dt <= 0) return;
+    // A background-tab gap must never become a catch-up barrage.
+    dt = Math.min(0.1, dt);
+    if (active) {
+      this.cooldown -= dt;
+      if (this.cooldown <= 0 && Number.isFinite(centerX) && Number.isFinite(roofHeight)) {
+        this.launch(centerX, Math.max(0, roofHeight));
+        this.cooldown = 2.1 + this.random() * 1.3;
+      }
+    } else {
+      this.cooldown = 0.6;
+    }
     for (const burst of this.bursts) {
       if (!burst.active) continue;
-      burst.life -= dt;
-      if (burst.life <= 0) {
+      burst.age += dt;
+      if (burst.age >= burst.launchDuration + burst.burstDuration) {
         burst.active = false;
-        burst.points.visible = false;
-        continue;
+        burst.rocket.visible = burst.sparks.visible = false;
+      } else {
+        this.draw(burst, night);
       }
-      const pos = burst.points.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const arr = pos.array as Float32Array;
-      for (let i = 0; i < PARTICLES_PER_BURST; i++) {
-        burst.velocities[i * 3 + 1] += GRAVITY * dt;
-        arr[i * 3] += burst.velocities[i * 3] * dt;
-        arr[i * 3 + 1] += burst.velocities[i * 3 + 1] * dt;
-        arr[i * 3 + 2] += burst.velocities[i * 3 + 2] * dt;
-      }
-      pos.needsUpdate = true;
-      const t = burst.life / burst.maxLife;
-      (burst.points.material as THREE.PointsMaterial).opacity = Math.min(1, t * 1.6) * night;
     }
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.preference.removeEventListener('change', this.onMotionChange);
+    this.clear();
+    for (const burst of this.bursts) {
+      for (const points of [burst.rocket, burst.sparks]) {
+        this.scene.remove(points);
+        points.geometry.dispose();
+        points.material.dispose();
+      }
+    }
+    this.texture.dispose();
   }
 }

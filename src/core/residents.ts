@@ -14,6 +14,33 @@ const FIRST_NAMES = [
   'Ava', 'Bo', 'Cleo', 'Dex', 'Eli', 'Fern', 'Gus', 'Hana', 'Iris', 'Juno',
   'Kai', 'Lulu', 'Milo', 'Nia', 'Otis', 'Pia', 'Quinn', 'Rio', 'Sunny', 'Tess',
 ];
+const EXTRA_NAMES = ['Maya', 'Noah', 'Amari', 'Ada', 'Rowan', 'Sage', 'Robin', 'Lena', 'Felix', 'Zara',
+  'Arlo', 'Nora', 'Jules', 'Ravi', 'Inez', 'Levi', 'Esme', 'Remy', 'Theo', 'Sana'];
+const FAMILY_NAMES = ['Chen', 'Rivera', 'Park', 'Patel', 'Brooks', 'Reed', 'Kim', 'Silva',
+  'Wong', 'Bennett', 'Ali', 'Cruz', 'Foster', 'Ito', 'Rossi', 'Shah', 'Green', 'Martin',
+  'Singh', 'Lopez', 'Campbell', 'Lin', 'Ellis', 'Costa', 'Khan', 'Morgan', 'Sato', 'Price',
+  'Bell', 'Diaz', 'Reyes', 'Wood'];
+
+/** Choose only for a new arrival: never rename saved neighbors or draw extra
+ * random numbers that would change their traits, schedules or the economy. */
+export function distinctResidentName(preferred: string, occupied: Iterable<string>): string {
+  const used = new Set(Array.from(occupied, (name) => name.trim().toLowerCase()));
+  const available = (name: string) => !used.has(name.toLowerCase());
+  if (available(preferred)) return preferred;
+  const names = [...FIRST_NAMES, ...EXTRA_NAMES];
+  const start = Math.max(0, names.indexOf(preferred));
+  const ordered = Array.from({ length: names.length }, (_, i) => names[(start + i) % names.length]);
+  for (const name of ordered) if (available(name)) return name;
+  for (const first of ordered) for (const last of FAMILY_NAMES) {
+    const name = `${first} ${last}`;
+    if (available(name)) return name;
+  }
+  // Extremely large towns still get distinct labels after exhausting 1,280
+  // first/family combinations. Existing custom names participate in the check.
+  let suffix = 2;
+  while (!available(`${preferred} ${FAMILY_NAMES[0]} ${suffix}`)) suffix++;
+  return `${preferred} ${FAMILY_NAMES[0]} ${suffix}`;
+}
 
 const PASTEL_COLORS = [
   0xf7a8b8, 0xa8d8f7, 0xb8f7a8, 0xf7e3a8, 0xd8a8f7, 0xf7c8a8, 0xa8f7e3, 0xc8a8f7,
@@ -72,7 +99,7 @@ export interface PlannedActivity {
 }
 
 /** Picks an open business floor of a type (optionally a specific subtype), or null. */
-export type FloorPicker = (type: JobFloorType, subtype?: BusinessSubtype) => Floor | null;
+export type FloorPicker = (type: JobFloorType | 'landmark', subtype?: BusinessSubtype) => Floor | null;
 
 /** When this resident turns in for the night. */
 function bedtimeOf(resident: Resident): number {
@@ -93,6 +120,14 @@ export function maybeEveningOuting(
   rand: () => number,
 ): PlannedActivity | null {
   const options: { weight: number; activity: Activity; duration: number; done: () => void }[] = [];
+
+  if (!resident.didLandmark) {
+    const landmark = pickFloor('landmark');
+    if (landmark) options.push({ weight: 1.2 + (1 - resident.needs.entertainment / 100) * 2,
+      activity: { kind: 'leisure', floor: landmark.level }, duration: 45,
+      // The benefit and daily flag are earned only on arrival, not while waiting.
+      done: () => {} });
+  }
 
   if (!resident.didDinner) {
     const spot = pickFloor('restaurant');
@@ -266,5 +301,6 @@ export function resetDailyFlags(residents: Resident[]): void {
     r.didDinner = false;
     r.didShop = false;
     r.didNightlife = false;
+    r.didLandmark = false;
   }
 }

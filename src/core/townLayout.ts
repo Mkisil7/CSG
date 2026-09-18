@@ -34,3 +34,15 @@ export function commuteMinutesBetween(fromTowerId: string, toTowerId: string): n
   const dist = Math.hypot(b.x - a.x, b.z - a.z);
   return Math.round(TOWN.commuteBaseMinutes + dist * TOWN.commuteMinutesPerUnit);
 }
+
+/** A street journey includes walking out of each lobby, not through neighboring rooms. */
+export function streetJourneyPosition(fromTowerId: string, toTowerId: string, progress: number): { x: number; z: number } {
+  const a = TOWER_SLOT_ORIGINS[slotIndexOfTowerId(fromTowerId)] ?? TOWER_SLOT_ORIGINS[0];
+  const b = TOWER_SLOT_ORIGINS[slotIndexOfTowerId(toTowerId)] ?? a;
+  const distance = Math.abs(b.x - a.x);
+  const entry = 6.9;
+  const travelled = Math.max(0, Math.min(1, progress)) * (distance + entry * 2);
+  if (travelled < entry) return { x: a.x + 1, z: 1.6 + travelled };
+  if (travelled < entry + distance) return { x: a.x + 1 + Math.sign(b.x - a.x) * (travelled - entry), z: 8.5 };
+  return { x: b.x + 1, z: 8.5 - (travelled - entry - distance) };
+}

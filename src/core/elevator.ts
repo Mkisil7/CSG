@@ -27,13 +27,18 @@ export interface Arrival {
 
 export interface Boarding {
   residentId: string;
+  waitMinutes: number;
+}
+
+export interface Abandonment extends Arrival {
+  waitMinutes: number;
 }
 
 export interface ElevatorTickResult {
   arrivals: Arrival[];
   boardings: Boarding[];
   /** Riders who waited past their patience and gave up (took the stairs). */
-  abandonments: Arrival[];
+  abandonments: Abandonment[];
 }
 
 /**
@@ -145,7 +150,7 @@ export class ElevatorSystem {
         if (now - rider.enqueuedAt >= this.maxPatience) {
           queue.splice(i, 1);
           this.recordWait(now - rider.enqueuedAt);
-          result.abandonments.push({ residentId: rider.residentId, floor: rider.to });
+          result.abandonments.push({ residentId: rider.residentId, floor: rider.to, waitMinutes: now - rider.enqueuedAt });
         } else {
           i++;
         }
@@ -219,7 +224,7 @@ export class ElevatorSystem {
       while (queue.length > 0 && car.riders.length < this.capacity) {
         const rider = queue.shift()!;
         car.riders.push(rider);
-        result.boardings.push({ residentId: rider.residentId });
+        result.boardings.push({ residentId: rider.residentId, waitMinutes: now - rider.enqueuedAt });
         this.recordWait(now - rider.enqueuedAt);
       }
       if (queue.length === 0) this.queues.delete(floor);

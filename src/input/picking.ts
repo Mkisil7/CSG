@@ -20,6 +20,8 @@ export class PickingController {
   private downY = 0;
   private downTime = 0;
   private downValid = false;
+  private downId: number | null = null;
+  private pointers = new Set<number>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -28,13 +30,26 @@ export class PickingController {
     private readonly onPick: (result: PickResult) => void,
   ) {
     canvas.addEventListener('pointerdown', (e) => {
+      this.pointers.add(e.pointerId);
+      if (this.pointers.size !== 1) { this.downValid = false; return; }
+      this.downId = e.pointerId;
       this.downX = e.clientX;
       this.downY = e.clientY;
       this.downTime = performance.now();
       this.downValid = true;
     });
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerId === this.downId && Math.hypot(e.clientX - this.downX, e.clientY - this.downY) > MAX_CLICK_DELTA_PX) this.downValid = false;
+    });
+    const cancel = (e: PointerEvent) => {
+      this.pointers.delete(e.pointerId);
+      if (e.pointerId === this.downId) this.downValid = false;
+    };
+    canvas.addEventListener('pointercancel', cancel);
+    canvas.addEventListener('pointerleave', cancel);
     canvas.addEventListener('pointerup', (e) => {
-      if (!this.downValid) return;
+      this.pointers.delete(e.pointerId);
+      if (!this.downValid || e.pointerId !== this.downId) return;
       this.downValid = false;
       const delta = Math.hypot(e.clientX - this.downX, e.clientY - this.downY);
       const elapsed = performance.now() - this.downTime;

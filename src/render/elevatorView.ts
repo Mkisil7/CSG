@@ -21,7 +21,7 @@ export class ElevatorViews {
     parent.add(this.group);
   }
 
-  sync(elevator: ElevatorSystem): void {
+  sync(elevator: ElevatorSystem, isFloorReady: (level: number) => boolean = () => true): void {
     while (this.cabs.length < elevator.cars.length) {
       // Optional real model (public/models/, see assets.ts): children named
       // 'Body'/'Light' get state-color feedback; otherwise it renders as-is.
@@ -66,6 +66,7 @@ export class ElevatorViews {
 
     elevator.cars.forEach((car, i) => {
       const cab = this.cabs[i];
+      cab.root.visible = isFloorReady(Math.ceil(car.pos - 1e-6));
       cab.root.position.set(this.shaftX, floorY(car.pos) + FLOOR_HEIGHT * 0.4, 0);
       cab.body.color.setHex(car.state === 'loading' ? CAB_LOADING : CAB_BODY);
       cab.light.color.setHex(

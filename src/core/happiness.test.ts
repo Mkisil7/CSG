@@ -5,6 +5,7 @@ import {
   spendingMultiplier,
   updateHappinessAndEvict,
   worstFactor,
+  residentTravelPressure,
 } from './happiness';
 import { Game } from './game';
 import { Town } from './town';
@@ -133,7 +134,7 @@ describe('helpers', () => {
     const r = addResident(game, {
       needs: { housing: 90, employment: 80, food: 5, entertainment: 60 },
     });
-    expect(worstFactor(r)).toBe('nowhere good to eat');
+    expect(worstFactor(r)).toBe('missed meals');
   });
 });
 
@@ -181,6 +182,39 @@ describe('nightlife, parks, and transit', () => {
 });
 
 describe('happinessBreakdown', () => {
+  it.each([['mixed', 'mixed'], ['transit', 'mixed'], ['mixed', 'transit'], ['transit', 'transit']] as const)(
+    'uses the daily simulation penalties with %s homes and %s jobs', (homeZone, jobZone) => {
+      const town = new Town();
+      const home = new Game('t0', town.economy, homeZone), job = new Game('t2', town.economy, jobZone);
+      town.slots[0] = { id: home.id, unlocked: true, zone: homeZone, game: home };
+      town.slots[2] = { id: job.id, unlocked: true, zone: jobZone, game: job };
+      home.tower.addFloor('residential'); job.tower.addFloor('office');
+      const r = addResident(home, { jobTowerId: job.id, jobFloor: 1 });
+      home.averageWait = () => 36;
+      const pressure = residentTravelPressure(r, home, job);
+      expect(pressure.waitPenalty).toBe(13);
+      const transit = homeZone === 'transit' || jobZone === 'transit';
+      const expectedCommute = Math.max(0, Math.min(20, (pressure.commuteMinutes - (transit ? 60 : 30)) * (transit ? 0.15 : 0.3)));
+      expect(pressure.commutePenalty).toBe(expectedCommute);
+      updateHappinessAndEvict([home, job], 2);
+      const base = Object.entries(HAPPINESS.weights).reduce((sum, [need, weight]) => sum + r.needs[need as keyof Resident['needs']] * weight, 0);
+      expect(r.happiness).toBeCloseTo(base - pressure.waitPenalty - pressure.commutePenalty);
+      const before = JSON.stringify(toSnapshot(town));
+      const breakdown = happinessBreakdown(town);
+      expect(breakdown.penalties.map((p) => p.value)).toEqual([pressure.waitPenalty, pressure.commutePenalty]);
+      expect(JSON.stringify(toSnapshot(town))).toBe(before);
+    });
+
+  it('compares need deficits and travel on the same happiness-point scale', () => {
+    const r = createResident(1, 't0');
+    r.needs = { housing: 60, employment: 60, food: 100, entertainment: 100 };
+    expect(worstFactor(r, 20, 0)).toBe('long lift queues');
+    expect(worstFactor(r, 0, 20)).toBe('a long commute');
+    r.needs.food = 0;
+    expect(worstFactor(r, 20, 20)).toBe('missed meals');
+    r.jobTowerId = r.homeTowerId; r.jobFloor = 1;
+    expect(residentTravelPressure(r).commutePenalty).toBe(0);
+  });
   it('reports a neutral breakdown when there are no residents', () => {
     const town = new Town();
     const b = happinessBreakdown(town);
@@ -209,3 +243,5 @@ describe('happinessBreakdown', () => {
     expect(bd.penalties.map((p) => p.label)).toEqual(['Lift queues', 'Long commutes']);
   });
 });
+
+function toSnapshot(town: Town) { return { residents: town.allResidents(), coins: town.economy.coins, journal: town.stories.journal }; }

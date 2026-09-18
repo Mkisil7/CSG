@@ -34,6 +34,19 @@ export function assignedStaff(
   return allResidents.filter((r) => r.jobTowerId === towerId && r.jobFloor === level);
 }
 
+/** Read-only activity classification. Call only with residents physically in
+ * this tower; equal floor numbers in other towers are unrelated destinations. */
+export function businessCustomerPhase(resident: Resident, floor: Floor): 'here' | 'on-way' | null {
+  const activity = floor.type === 'restaurant' ? 'eat' : floor.type === 'shop' ? 'shop' : null;
+  if (!activity) return null;
+  const state = resident.state;
+  if (state.kind === 'idle') return state.floor === floor.level &&
+    state.activity.floor === floor.level && state.activity.kind === activity ? 'here' : null;
+  if (state.kind !== 'waiting' && state.kind !== 'riding' && state.kind !== 'stairs') return null;
+  return state.to === floor.level && resident.pendingActivity?.activity.floor === floor.level &&
+    resident.pendingActivity.activity.kind === activity ? 'on-way' : null;
+}
+
 /**
  * Which business levels in a tower are open (have at least one hired staffer).
  * Assigned-based rather than presence-based, so businesses don't flicker
@@ -194,6 +207,7 @@ export function resetBusinessDay(contexts: TowerContext[]): void {
   for (const ctx of contexts) {
     for (const floor of ctx.tower.floors) {
       floor.visitsToday = 0;
+      floor.missedVisitsToday = 0;
       floor.revenueToday = 0;
     }
   }

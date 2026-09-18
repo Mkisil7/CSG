@@ -1,88 +1,71 @@
 import { describe, expect, it } from 'vitest';
-import { CityEventSystem } from './events';
+import { CityEventSystem, type CityEventsSave } from './events';
+import { Town } from './town';
+import { toSaveData, townFromSaveData } from './save';
 
-/** Deterministic RNG so scheduling/rolls are reproducible in tests. */
-function seeded(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 0x100000000;
-  };
-}
+const savedBonus = (): CityEventsSave => ({ active: [
+  { id: 'evt1', kind: 'festival', startDay: 2, endsDay: 5 },
+  { id: 'evt2', kind: 'tourism', startDay: 2, endsDay: 6 },
+], nextAtDay: 4, seq: 3 });
 
-describe('CityEventSystem', () => {
-  it('starts with no active events and a neutral effect', () => {
-    const sys = new CityEventSystem(1, seeded(1));
-    expect(sys.active).toHaveLength(0);
-    expect(sys.incomeMultiplier()).toBe(1);
-    expect(sys.moodBonus()).toBe(0);
-  });
-
-  it('eventually starts an event, and it carries a real effect', () => {
-    const sys = new CityEventSystem(1, seeded(7));
-    const rng = seeded(7);
-    let started = 0;
-    for (let day = 1; day <= 20; day++) started += sys.update(day, rng).started.length;
-    expect(started).toBeGreaterThan(0);
-    // Whenever something is active, the effect is non-neutral.
-    if (sys.active.length) {
-      const neutral = sys.incomeMultiplier() === 1 && sys.moodBonus() === 0;
-      expect(neutral).toBe(false);
+describe('retired random director and saved positive bonuses', () => {
+  it('never fabricates happenings in a new town, even across a large time jump', () => {
+    const system = new CityEventSystem();
+    for (const day of [1, 2, 20, 100, 10000]) {
+      expect(system.update(day)).toEqual({ ended: [] }); expect(system.active).toHaveLength(0);
+      expect(system.incomeMultiplier()).toBe(1); expect(system.moodBonus()).toBe(0);
     }
   });
-
-  it('expires events once their duration passes', () => {
-    const sys = new CityEventSystem(1, seeded(3));
-    const rng = seeded(99);
-    // Run far enough to guarantee at least one full start→end cycle.
-    let sawActive = false;
-    let sawEnded = false;
-    for (let day = 1; day <= 40; day++) {
-      const { ended } = sys.update(day, rng);
-      if (sys.active.length) sawActive = true;
-      if (ended.length) sawEnded = true;
-    }
-    expect(sawActive).toBe(true);
-    expect(sawEnded).toBe(true);
+  it('honors saved positive effects and expires each once without replacements', () => {
+    const system = new CityEventSystem(); system.restore(savedBonus(), 3);
+    expect(system.active).toHaveLength(2);
+    expect(system.incomeMultiplier()).toBeCloseTo(1.7 * 1.5); expect(system.moodBonus()).toBe(11);
+    expect(system.update(3).ended).toHaveLength(0);
+    expect(system.update(5).ended.map((event) => event.kind)).toEqual(['festival']);
+    expect(system.update(5).ended).toHaveLength(0);
+    expect(system.update(6).ended.map((event) => event.kind)).toEqual(['tourism']);
+    expect(system.update(100).ended).toHaveLength(0); expect(system.active).toHaveLength(0);
   });
-
-  it('never runs more than two overlapping events', () => {
-    const sys = new CityEventSystem(1, seeded(42));
-    const rng = seeded(123);
-    let maxConcurrent = 0;
-    for (let day = 1; day <= 100; day++) {
-      sys.update(day, rng);
-      maxConcurrent = Math.max(maxConcurrent, sys.active.length);
-    }
-    expect(maxConcurrent).toBeLessThanOrEqual(2);
+  it('does not restore recession, heatwave or rain penalties from an older save', () => {
+    const system = new CityEventSystem();
+    system.restore({ active: ['recession', 'heatwave', 'rain'].map((kind, index) =>
+      ({ id: `evt${index}`, kind, startDay: 2, endsDay: 4 })) } as CityEventsSave, 3);
+    expect(system.active).toHaveLength(0); expect(system.incomeMultiplier()).toBe(1); expect(system.moodBonus()).toBe(0);
   });
-
-  it('combines overlapping effects multiplicatively (income) and additively (mood)', () => {
-    const sys = new CityEventSystem(1, seeded(5));
-    // Force two known active events and check the aggregate math.
-    sys.active = [
-      {
-        id: 'a', kind: 'festival', emoji: '🎉', title: 'F', blurb: '', good: true,
-        startDay: 1, endsDay: 5, incomeMultiplier: 1.5, moodBonus: 8,
-      },
-      {
-        id: 'b', kind: 'recession', emoji: '📉', title: 'R', blurb: '', good: false,
-        startDay: 1, endsDay: 5, incomeMultiplier: 0.8, moodBonus: -6,
-      },
-    ];
-    expect(sys.incomeMultiplier()).toBeCloseTo(1.2, 5);
-    expect(sys.moodBonus()).toBe(2);
+  it('restores old saves without restarting their retired schedule', () => {
+    const system = new CityEventSystem(); system.restore(undefined, 200);
+    expect(system.update(201)).toEqual({ ended: [] });
+    system.restore({ active: [], nextAtDay: 1, seq: 500 }, 200);
+    expect(system.update(99999)).toEqual({ ended: [] });
   });
-
-  it('catches up across skipped days without stalling the schedule', () => {
-    const sys = new CityEventSystem(1, seeded(11));
-    const rng = seeded(11);
-    // Jump straight to a far day (as offline catch-up would): the schedule
-    // advances past it rather than firing every intervening day at once.
-    const { started } = sys.update(50, rng);
-    expect(started.length).toBeLessThanOrEqual(2);
-    // And the system is ready to fire again in the future, not stuck in the past.
-    const again = sys.update(80, rng);
-    expect(again.started.length).toBeGreaterThanOrEqual(0);
+  it('bounds valid legacy bonuses and rejects duplicate, expired and impossible entries', () => {
+    const system = new CityEventSystem(); const saved = savedBonus();
+    saved.active.unshift({ id: 'evt0', kind: 'boom', startDay: 1, endsDay: 500 });
+    saved.active.push({ id: 'evt8', kind: 'tourism', startDay: 2, endsDay: 6 });
+    system.restore(saved, 3); expect(system.active).toHaveLength(2);
+    system.restore(saved, 7); expect(system.active).toHaveLength(0);
+  });
+  it('describes compatibility bonuses without inventing crowds or a celebrity resident', () => {
+    const system = new CityEventSystem();
+    system.restore({ active: [{ id: 'evt1', kind: 'celebrity', startDay: 2, endsDay: 6 }] }, 3);
+    expect(system.active[0].title).toBe('Saved community buzz');
+    expect(system.active[0].blurb).toContain('No fictional resident');
+    expect(system.active[0].moodBonus).toBe(10);
+  });
+  it('round-trips remaining bonuses independently of their source objects', () => {
+    const town = new Town(); town.time = 2 * 1440;
+    town.cityEvents.restore(savedBonus(), town.day);
+    const save = toSaveData(town), loaded = townFromSaveData(save)!;
+    expect(loaded.cityEvents.snapshot()).toEqual(town.cityEvents.snapshot());
+    expect(loaded.economy.eventMultiplier).toBeCloseTo(2.55);
+    loaded.cityEvents.active[0].endsDay = 4;
+    expect(save.cityEvents!.active[0].endsDay).toBe(5);
+  });
+  it('does not apply surprise economic or mood penalties during a fresh-town simulation', () => {
+    const town = new Town();
+    for (let i = 0; i < 24 * 30; i++) town.tick(60);
+    expect(town.cityEvents.active).toHaveLength(0); expect(town.economy.eventMultiplier).toBe(1);
+    expect(town.cityEvents.moodBonus()).toBe(0); expect(town.neighborhood.events).toHaveLength(0);
+    expect(town.activityLog.some((event) => /Recession|Celebrity|Street Festival/.test(event.message))).toBe(false);
   });
 });

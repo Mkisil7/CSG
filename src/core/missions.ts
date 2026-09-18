@@ -14,9 +14,30 @@ export interface MissionDef {
   /** For daily missions, how many consecutive passing days are required. */
   streakDays?: number;
   check: (town: Town) => boolean;
+  /** Optional one-time town memory, called only when the reward is first earned. */
+  onComplete?: (town: Town) => void;
+}
+
+function openingMilestone(id: string, label: string, type: 'shop' | 'restaurant', reward: number): MissionDef {
+  const servedPlace = (town: Town) => {
+    for (const game of town.towers()) for (const floor of game.tower.floors)
+      if (floor.type === type && floor.visitsToday > 0 && floor.revenueToday > 0) return { towerId: game.id, floor };
+    return undefined;
+  };
+  return { id, label, reward, cadence: 'instant',
+    description: type === 'shop' ? 'Serve your first paying shop customer' : 'Serve your first paying restaurant guest',
+    check: (town) => servedPlace(town) !== undefined,
+    onComplete: (town) => {
+      const venue = servedPlace(town);
+      if (venue) town.stories.record(town.day, 'place', [], `${venue.floor.name} welcomed its first customer`,
+        `Someone reached ${type === 'shop' ? 'the shop and made a purchase' : 'a table and paid for a meal'}. ${reward} milestone coins are now available for the neighborhood’s next step.`,
+        { kind: 'floor', towerId: venue.towerId, level: venue.floor.level });
+    } };
 }
 
 export const MISSION_DEFS: MissionDef[] = [
+  openingMilestone('first-shop-customer', 'Open for Business', 'shop', 60),
+  openingMilestone('first-meal', 'A Table for the Neighborhood', 'restaurant', 90),
   {
     id: 'first-neighbors',
     label: 'First Neighbors',
@@ -301,7 +322,7 @@ function buildExtraMissions(): MissionDef[] {
  */
 export class Missions {
   completed = new Set<string>();
-  /** Consecutive passing days for streak missions (not persisted; rough edge). */
+  /** Consecutive passing days for streak missions, persisted alongside completions. */
   streaks: Record<string, number> = {};
 
   get completedCount(): number {
@@ -332,9 +353,11 @@ export class Missions {
       if (passed) {
         this.completed.add(def.id);
         town.economy.earn(def.reward);
+        def.onComplete?.(town);
         events.push({
           kind: 'mission',
-          message: `🎯 Mission complete: ${def.label} (+${def.reward} coins)`,
+          message: `🎯 Mission complete: ${def.label} (+${def.reward} coins) · a new tile on the town story wall`,
+          milestone: { id: def.id, label: def.label, reward: def.reward },
         });
       }
     }

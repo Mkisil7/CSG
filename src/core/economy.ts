@@ -11,9 +11,9 @@ export class Economy {
   incomeToday = 0;
 
   /**
-   * Town-wide multiplier on foot-traffic income, driven by live City Events
-   * (a festival or boom lifts it, a recession drags it down). 1 = normal;
-   * ephemeral, set each tick by the event system, never persisted.
+   * Compatibility multiplier for positive bonuses from older saves. 1 = normal.
+   * Current neighborhood events apply their benefits to the actual participating
+   * venues and visitors; they do not randomly penalize the whole town.
    */
   eventMultiplier = 1;
 
@@ -49,13 +49,14 @@ export class Economy {
       for (const r of ctx.residents) {
         if (r.state.kind !== 'idle' || r.state.activity.kind !== 'work') continue;
         if (r.jobTowerId === null || r.jobFloor === null) continue;
+        if (r.jobTowerId !== ctx.id || r.state.floor !== r.jobFloor) continue;
         const jobCtx = byId.get(r.jobTowerId);
         const floor = jobCtx?.tower.floors[r.jobFloor];
-        if (!floor || floor.type === 'lobby' || floor.type === 'residential') continue;
+        if (!floor || floor.type === 'lobby' || floor.type === 'residential' || floor.type === 'landmark') continue;
         const tier = JOB_TIERS[floor.type][r.jobTier];
         if (!tier) continue;
         const wagePerMinute = ECONOMY.baseWagePerWorkerDay[floor.type] / (8 * 60);
-        amount += wagePerMinute * tier.payMultiplier * dt;
+        amount += wagePerMinute * tier.payMultiplier * dt * (floor.variant === 'innovation-hub' ? 1.2 : 1);
       }
     }
     this.earn(amount);

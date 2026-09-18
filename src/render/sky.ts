@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { lightingAt } from './lighting';
 
 /**
  * A painterly sky: a gradient dome that shifts dawn → day → dusk → night, a sun
@@ -10,21 +11,28 @@ import * as THREE from 'three';
 const DOME_RADIUS = 460;
 
 // Horizon (bottom) and zenith (top) colours for the key times of day.
-const DAY_TOP = new THREE.Color(0x5fa8e6);
-const DAY_BOTTOM = new THREE.Color(0xcdeaf6);
-const DUSK_TOP = new THREE.Color(0x3a4d8f);
-const DUSK_BOTTOM = new THREE.Color(0xf2a56b);
+const DAY_TOP = new THREE.Color(0x528dc6);
+const DAY_BOTTOM = new THREE.Color(0xb9d5e5);
+const DAY_MIDDLE = new THREE.Color(0x84b4d8);
+const DUSK_TOP = new THREE.Color(0x344572);
+const DUSK_BOTTOM = new THREE.Color(0xea9863);
+const DUSK_MIDDLE = new THREE.Color(0xa96c88);
 const NIGHT_TOP = new THREE.Color(0x0b1030);
 const NIGHT_BOTTOM = new THREE.Color(0x28305c);
+const NIGHT_MIDDLE = new THREE.Color(0x202c53);
+const CLOUD_TOP = new THREE.Color(0x687987);
+const CLOUD_BOTTOM = new THREE.Color(0xb6c6cc);
 
 const SUN_COLOR = new THREE.Color(0xfff2c4);
 const MOON_COLOR = new THREE.Color(0xdfe6ff);
 
 const tmpTop = new THREE.Color();
 const tmpBottom = new THREE.Color();
+const tmpMiddle = new THREE.Color();
 
 export class Sky {
   readonly group = new THREE.Group();
+  readonly horizonColor = new THREE.Color();
   private domeMat: THREE.ShaderMaterial;
   private sun: THREE.Mesh;
   private moon: THREE.Mesh;
@@ -42,7 +50,7 @@ export class Sky {
       uniforms: {
         top: { value: DAY_TOP.clone() },
         bottom: { value: DAY_BOTTOM.clone() },
-        exponent: { value: 0.9 },
+        middle: { value: DAY_MIDDLE.clone() },
       },
       vertexShader: `
         varying vec3 vPos;
@@ -54,11 +62,12 @@ export class Sky {
       fragmentShader: `
         uniform vec3 top;
         uniform vec3 bottom;
-        uniform float exponent;
+        uniform vec3 middle;
         varying vec3 vPos;
         void main() {
-          float h = clamp(normalize(vPos).y * 0.5 + 0.5, 0.0, 1.0);
-          gl_FragColor = vec4(mix(bottom, top, pow(h, exponent)), 1.0);
+          float h = clamp(normalize(vPos).y, 0.0, 1.0);
+          vec3 lowSky = mix(bottom, middle, smoothstep(0.0, 0.12, h));
+          gl_FragColor = vec4(mix(lowSky, top, smoothstep(0.06, 0.45, h)), 1.0);
         }
       `,
     });
@@ -104,33 +113,35 @@ export class Sky {
     scene.add(this.group);
   }
 
-  /**
-   * @param daylight  0 (deep night) → 1 (midday) scalar.
-   * @param dayFrac   0 → 1 fraction through the 24h day (drives sun/moon arc).
-   * @param center    world-x to keep the dome/celestials centred on the camera area.
-   */
-  update(daylight: number, dayFrac: number, centerX: number): void {
-    this.group.position.x = centerX;
+  /** Keep the sky inside the far plane; use the same solar profile as scene lighting. */
+  update(light: ReturnType<typeof lightingAt>, cameraPosition: THREE.Vector3): void {
+    const { daylight, twilight, cloud: cloudCover } = light;
+    this.group.position.copy(cameraPosition);
 
     // Dome colours: blend night → dusk → day. Dusk peaks at the twilight band.
-    const dusk = Math.max(0, 1 - Math.abs(daylight - 0.5) / 0.5) * (1 - daylight * 0.4);
-    tmpTop.copy(NIGHT_TOP).lerp(DAY_TOP, daylight).lerp(DUSK_TOP, dusk * 0.6);
-    tmpBottom.copy(NIGHT_BOTTOM).lerp(DAY_BOTTOM, daylight).lerp(DUSK_BOTTOM, dusk * 0.7);
+    tmpTop.copy(NIGHT_TOP).lerp(DAY_TOP, daylight).lerp(DUSK_TOP, twilight * 0.75);
+    tmpBottom.copy(NIGHT_BOTTOM).lerp(DAY_BOTTOM, daylight).lerp(DUSK_BOTTOM, twilight * 0.94);
+    tmpMiddle.copy(NIGHT_MIDDLE).lerp(DAY_MIDDLE, daylight).lerp(DUSK_MIDDLE, twilight * 0.96);
+    tmpTop.lerp(CLOUD_TOP, cloudCover).multiplyScalar(1 - cloudCover * (1 - daylight) * 0.7);
+    tmpBottom.lerp(CLOUD_BOTTOM, cloudCover).multiplyScalar(1 - cloudCover * (1 - daylight) * 0.65);
+    tmpMiddle.lerp(CLOUD_TOP, cloudCover).multiplyScalar(1 - cloudCover * (1 - daylight) * 0.68);
     (this.domeMat.uniforms.top.value as THREE.Color).copy(tmpTop);
     (this.domeMat.uniforms.bottom.value as THREE.Color).copy(tmpBottom);
+    (this.domeMat.uniforms.middle.value as THREE.Color).copy(tmpMiddle);
+    this.horizonColor.copy(tmpBottom);
 
     // Sun/moon arc: noon (dayFrac 0.5) overhead, rising east / setting west.
-    const sunAngle = (dayFrac - 0.25) * Math.PI * 2; // 0 at 06:00 (horizon east)
+    const sunAngle = light.angle;
     const R = DOME_RADIUS * 0.8;
     this.sun.position.set(Math.cos(sunAngle) * R, Math.sin(sunAngle) * R, -80);
     this.moon.position.set(-Math.cos(sunAngle) * R, -Math.sin(sunAngle) * R, -80);
-    this.sun.visible = this.sun.position.y > -30;
-    this.moon.visible = this.moon.position.y > -30;
+    this.sun.visible = this.sun.position.y > -30 && cloudCover < 0.5;
+    this.moon.visible = this.moon.position.y > -30 && cloudCover < 0.5;
     // Brighten the sun by day, the moon by night (bloom does the rest).
     this.sunMat.color.copy(SUN_COLOR).multiplyScalar(0.5 + 0.9 * daylight);
     this.moonMat.color.copy(MOON_COLOR).multiplyScalar(0.5 + 0.7 * (1 - daylight));
 
     // Stars fade in through dusk into night.
-    this.starMat.opacity = Math.max(0, 1 - daylight * 1.6);
+    this.starMat.opacity = light.stars;
   }
 }

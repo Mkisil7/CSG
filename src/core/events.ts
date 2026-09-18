@@ -1,14 +1,9 @@
 /**
- * "Live City" events: a lightweight director that periodically throws a
- * town-wide happening at the player — a street festival, a tourism surge, a
- * celebrity move-in, a recession — each with a real, temporary mechanical
- * effect (foot-traffic income and/or town mood) and a duration in days.
- *
- * Effects are exposed as two simple scalars the rest of the sim already knows
- * how to consume: an income multiplier (folded into every shop/restaurant
- * visit via Economy.eventMultiplier) and a mood bonus (added to every
- * resident's daily happiness). Events are deliberately NOT persisted — they're
- * live ambience that regenerates, so there's no save-format churn.
+ * Compatibility for positive bonuses saved by the retired random director.
+ * No new events originate here. Neighborhood invitations are now the single
+ * source of new happenings: actual people/venues, explained eligibility and a
+ * player choice. Existing positive bonuses expire normally; arbitrary penalties
+ * are not restored. Weather continues to affect actual journeys independently.
  */
 
 export type CityEventKind =
@@ -27,15 +22,22 @@ export interface CityEvent {
   emoji: string;
   title: string;
   blurb: string;
-  /** True for a beneficial event (used for UI tone and world visuals). */
+  /** True for the beneficial legacy bonuses still supported by saves. */
   good: boolean;
   /** Day it began and the day it ends (exclusive). */
   startDay: number;
   endsDay: number;
   /** Multiplier on town-wide foot-traffic income while active. */
   incomeMultiplier: number;
-  /** Happiness points added to every resident while active (may be negative). */
+  /** Happiness points added to every resident while this saved bonus lasts. */
   moodBonus: number;
+}
+
+export interface CityEventsSave {
+  active: Pick<CityEvent, 'id' | 'kind' | 'startDay' | 'endsDay'>[];
+  /** Legacy scheduling fields are accepted but never resumed. */
+  nextAtDay?: number;
+  seq?: number;
 }
 
 interface EventDef {
@@ -46,175 +48,99 @@ interface EventDef {
   good: boolean;
   incomeMultiplier: number;
   moodBonus: number;
-  minDays: number;
   maxDays: number;
-  /** Relative spawn likelihood. Good events outweigh bad ones on purpose. */
-  weight: number;
 }
 
 const DEFS: EventDef[] = [
   {
     kind: 'festival',
     emoji: '🎉',
-    title: 'Street Festival',
-    blurb: 'The whole town is out celebrating — shops and restaurants are packed!',
+    title: 'Saved festival bonus',
+    blurb: 'A spending and mood bonus from an earlier version. New festivals require a neighborhood invitation; this saved bonus does not spawn guests.',
     good: true,
     incomeMultiplier: 1.7,
     moodBonus: 8,
-    minDays: 2,
     maxDays: 3,
-    weight: 5,
   },
   {
     kind: 'tourism',
     emoji: '📸',
-    title: 'Tourist Season',
-    blurb: 'Visitors are flooding in and spending big all over town.',
+    title: 'Saved spending bonus',
+    blurb: 'A temporary bonus from an earlier version, applied only when somebody actually visits a business.',
     good: true,
     incomeMultiplier: 1.5,
     moodBonus: 3,
-    minDays: 3,
     maxDays: 4,
-    weight: 5,
   },
   {
     kind: 'boom',
     emoji: '📈',
-    title: 'Economic Boom',
-    blurb: 'Wallets are open and business is booming across the town.',
+    title: 'Saved business bonus',
+    blurb: 'Your previously saved spending and mood bonus lasts until its original end date.',
     good: true,
     incomeMultiplier: 1.4,
     moodBonus: 4,
-    minDays: 3,
     maxDays: 5,
-    weight: 4,
   },
   {
     kind: 'celebrity',
     emoji: '🌟',
-    title: 'A Celebrity Moves In',
-    blurb: 'A famous face now calls your town home — everyone is thrilled.',
+    title: 'Saved community buzz',
+    blurb: 'A community bonus saved by an earlier version. No fictional resident is added; familiar faces now grow from real friendships.',
     good: true,
     incomeMultiplier: 1.25,
     moodBonus: 10,
-    minDays: 4,
     maxDays: 6,
-    weight: 3,
   },
   {
     kind: 'grandOpening',
     emoji: '🎈',
-    title: 'Grand-Opening Buzz',
-    blurb: 'Buzz is in the air and crowds are drawn to every storefront.',
+    title: 'Saved opening bonus',
+    blurb: 'A previously saved opening bonus. New storefront rewards come from actual service and quality.',
     good: true,
     incomeMultiplier: 1.6,
     moodBonus: 5,
-    minDays: 1,
     maxDays: 2,
-    weight: 4,
-  },
-  {
-    kind: 'recession',
-    emoji: '📉',
-    title: 'Recession',
-    blurb: 'Times are tight — people are spending far less than usual.',
-    good: false,
-    incomeMultiplier: 0.7,
-    moodBonus: -6,
-    minDays: 2,
-    maxDays: 4,
-    weight: 3,
-  },
-  {
-    kind: 'heatwave',
-    emoji: '🥵',
-    title: 'Heat Wave',
-    blurb: 'A sweltering spell has everyone cranky and staying indoors.',
-    good: false,
-    incomeMultiplier: 0.9,
-    moodBonus: -8,
-    minDays: 2,
-    maxDays: 3,
-    weight: 2,
-  },
-  {
-    kind: 'rain',
-    emoji: '🌧️',
-    title: 'Rainy Spell',
-    blurb: 'Grey skies and puddles keep the crowds thin this week.',
-    good: false,
-    incomeMultiplier: 0.85,
-    moodBonus: -4,
-    minDays: 1,
-    maxDays: 3,
-    weight: 2,
   },
 ];
 
-/** Days between the town opening and the first event, and between events. */
-const FIRST_EVENT_DELAY = 1;
-const MIN_GAP_DAYS = 2;
-const MAX_GAP_DAYS = 5;
 /** Never run more than this many overlapping events at once. */
 const MAX_CONCURRENT = 2;
 
-function randInt(lo: number, hi: number, rng: () => number): number {
-  return lo + Math.floor(rng() * (hi - lo + 1));
-}
-
-function weightedDef(rng: () => number): EventDef {
-  const total = DEFS.reduce((s, d) => s + d.weight, 0);
-  let r = rng() * total;
-  for (const d of DEFS) {
-    r -= d.weight;
-    if (r <= 0) return d;
-  }
-  return DEFS[0];
-}
-
 export class CityEventSystem {
   active: CityEvent[] = [];
-  private nextAtDay: number;
-  private seq = 0;
+  snapshot(): CityEventsSave {
+    return { active: this.active.map(({ id, kind, startDay, endsDay }) => ({ id, kind, startDay, endsDay })) };
+  }
 
-  constructor(startDay = 1, rng: () => number = Math.random) {
-    this.nextAtDay = startDay + FIRST_EVENT_DELAY + randInt(0, 1, rng);
+  restore(saved: CityEventsSave | undefined, day: number): void {
+    this.active = [];
+    const seen = new Set<CityEventKind>();
+    for (const event of Array.isArray(saved?.active) ? saved.active : []) {
+      if (!event) continue;
+      const def = DEFS.find((candidate) => candidate.kind === event.kind);
+      if (!def?.good || seen.has(def.kind) || typeof event.id !== 'string' || !/^evt\d+$/.test(event.id) ||
+        !Number.isSafeInteger(Number(event.id.slice(3))) ||
+        !Number.isSafeInteger(event.startDay) || !Number.isSafeInteger(event.endsDay) ||
+        event.startDay < 1 || event.startDay > day || event.endsDay <= day ||
+        event.endsDay > event.startDay + def.maxDays) continue;
+      // Presentation and multipliers come from known definitions, not a share code.
+      this.active.push({ id: event.id, kind: def.kind, startDay: event.startDay, endsDay: event.endsDay,
+        emoji: def.emoji, title: def.title, blurb: def.blurb, good: def.good,
+        incomeMultiplier: def.incomeMultiplier, moodBonus: def.moodBonus });
+      seen.add(def.kind);
+      if (this.active.length === MAX_CONCURRENT) break;
+    }
   }
 
   /**
-   * Advance the director to `day`. Expires finished events and, when the
-   * schedule is due (and there's room), starts a new one. Returns what changed
-   * so the caller can announce it. Safe to call every tick — it's cheap and
-   * idempotent within a day.
+   * Finish saved bonuses without generating replacements or replaying old news.
    */
-  update(day: number, rng: () => number = Math.random): { started: CityEvent[]; ended: CityEvent[] } {
+  update(day: number): { ended: CityEvent[] } {
     const ended = this.active.filter((e) => day >= e.endsDay);
     if (ended.length) this.active = this.active.filter((e) => day < e.endsDay);
 
-    const started: CityEvent[] = [];
-    // Catch up across any skipped days (e.g. offline catch-up jumps the clock).
-    while (day >= this.nextAtDay) {
-      const scheduledDay = this.nextAtDay;
-      this.nextAtDay = scheduledDay + randInt(MIN_GAP_DAYS, MAX_GAP_DAYS, rng);
-      if (this.active.length >= MAX_CONCURRENT) continue;
-      const def = weightedDef(rng);
-      if (this.active.some((e) => e.kind === def.kind)) continue; // no duplicates
-      const evt: CityEvent = {
-        id: `evt${this.seq++}`,
-        kind: def.kind,
-        emoji: def.emoji,
-        title: def.title,
-        blurb: def.blurb,
-        good: def.good,
-        startDay: scheduledDay,
-        endsDay: scheduledDay + randInt(def.minDays, def.maxDays, rng),
-        incomeMultiplier: def.incomeMultiplier,
-        moodBonus: def.moodBonus,
-      };
-      this.active.push(evt);
-      started.push(evt);
-    }
-    return { started, ended };
+    return { ended };
   }
 
   /** Product of active income multipliers (1 when nothing is happening). */
@@ -227,8 +153,4 @@ export class CityEventSystem {
     return this.active.reduce((s, e) => s + e.moodBonus, 0);
   }
 
-  /** True while any celebratory event is running (drives festive world visuals). */
-  hasFestive(): boolean {
-    return this.active.some((e) => e.good && (e.kind === 'festival' || e.kind === 'grandOpening'));
-  }
 }

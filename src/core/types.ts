@@ -1,4 +1,5 @@
-export type FloorType = 'lobby' | 'residential' | 'shop' | 'restaurant' | 'office' | 'factory';
+export type FloorType = 'lobby' | 'residential' | 'shop' | 'restaurant' | 'office' | 'factory' | 'landmark';
+export type LandmarkKind = 'conservatory' | 'gallery' | 'observatory';
 
 export type ShopSubtype = 'grocery' | 'boutique' | 'electronics';
 /** 'bar' is the nightlife subtype — residents visit it in the evening. */
@@ -21,16 +22,24 @@ export interface Floor {
   visitsToday: number;
   revenueToday: number;
   expensesToday: number;
+  /** Visits cancelled because the customer ran out of patience with the lift. */
+  missedVisitsToday?: number;
+  /** Earned through quality + activity; grants a distinct sign and visitor premium. */
+  signature?: boolean;
+  variant?: 'critics-choice' | 'founders-studio' | 'innovation-hub' | 'festival-market';
+  landmark?: LandmarkKind;
+  landmarkVisits?: number;
 }
 
 export type ResidentState =
-  | { kind: 'idle'; floor: number; activity: Activity; until: number }
+  | { kind: 'idle'; floor: number; activity: Activity; until: number; startedAt?: number }
   | { kind: 'waiting'; floor: number; to: number }
   | { kind: 'riding'; to: number }
-  /** Travelling between towers at street level; invisible until arrival. */
-  | { kind: 'commuting'; toTowerId: string; until: number };
+  | { kind: 'stairs'; from: number; to: number; startedAt: number; until: number }
+  /** Travelling between towers along a visible street route. */
+  | { kind: 'commuting'; toTowerId: string; startedAt?: number; until: number };
 
-export type ActivityKind = 'home' | 'work' | 'eat' | 'shop' | 'lobby' | 'commute';
+export type ActivityKind = 'home' | 'work' | 'eat' | 'shop' | 'lobby' | 'commute' | 'leisure';
 
 export interface Activity {
   kind: ActivityKind;
@@ -80,11 +89,23 @@ export interface Resident {
   didShop: boolean;
   /** Went out to a bar/lounge this evening (separate from didShop). */
   didNightlife: boolean;
+  /** Successful public-landmark visit today; only set after physically arriving. */
+  didLandmark?: boolean;
   state: ResidentState;
   /** The activity a resident is travelling toward, applied on elevator arrival. */
-  pendingActivity?: { activity: Activity; duration: number };
+  pendingActivity?: {
+    activity: Activity; duration: number;
+    /** Restore planned-but-unfulfilled daily flags when a visit is cancelled. */
+    beforeFlags?: { day: number; didLunch: boolean; didDinner: boolean; didShop: boolean; didNightlife: boolean };
+  };
   /** Pastel color for rendering, hex. */
   color: number;
+  townRole?: 'Neighborhood host';
+}
+
+/** Guests share the lifts but never count as residents, staff or renters. */
+export interface Visitor extends Resident {
+  visit: { eventId: string; target: number; credited: boolean; resolved?: boolean };
 }
 
 export const MINUTES_PER_DAY = 24 * 60;
@@ -103,6 +124,7 @@ export const FLOOR_CONFIG: Record<
   // Factories employ workers who commute in, so they gate on 0 home-pop —
   // an industrial-zoned tower has no apartments of its own.
   factory: { label: 'Factory', baseCost: 180, jobs: 4, homes: 0, unlockPop: 0 },
+  landmark: { label: 'Landmark', baseCost: 900, jobs: 0, homes: 0, unlockPop: 0 },
 };
 
 /** Cost multiplier applied per existing floor, so the tower gets pricier as it rises. */
@@ -440,8 +462,8 @@ export const OFFLINE = {
   minAwayRealSeconds: 120,
   /** Cap on simulated away time, in real hours. */
   maxRealHours: 10,
-  /** Fast-forward tick size, game minutes. */
-  chunkGameMinutes: 15,
+  /** Catch-up precision: coarse steps invent long lift/door delays. */
+  chunkGameMinutes: 0.25,
 };
 
 export const MOVE_IN_INTERVAL = 90; // game minutes between move-in checks

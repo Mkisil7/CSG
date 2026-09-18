@@ -10,7 +10,7 @@ import {
 } from './types';
 import { Game, GameEvent } from './game';
 import { Economy } from './economy';
-import { createResident, resetDailyFlags } from './residents';
+import { createResident, distinctResidentName, resetDailyFlags } from './residents';
 import { assignJobs, processPromotions, TowerContext } from './careers';
 import {
   assignedStaff,
@@ -23,6 +23,11 @@ import { updateHappinessAndEvict } from './happiness';
 import { Missions } from './missions';
 import { CityEventSystem } from './events';
 import { TOWER_SLOT_ORIGINS } from './townLayout';
+import { TownStories } from './stories';
+import { TownIdentity } from './identity';
+import { TownWeather } from './weather';
+import { Neighborhood } from './neighborhood';
+import type { GiftData } from './giftLedger';
 
 /** How many recent events the Activity feed retains. */
 const ACTIVITY_LOG_MAX = 200;
@@ -47,7 +52,13 @@ export class Town {
   slots: TownSlot[];
   economy = new Economy();
   missions = new Missions();
-  /** Live "City Events" director (festivals, booms, recessions). Not persisted. */
+  stories = new TownStories();
+  identity = new TownIdentity();
+  weather = new TownWeather();
+  neighborhood = new Neighborhood();
+  /** Saved with the wallet so gift credits/deductions have one commit point. */
+  gifts: GiftData = { redeemed: [], sent: [] };
+  /** Compatibility for saved positive bonuses; new events use neighborhood invitations. */
   cityEvents = new CityEventSystem();
 
   /** Total game minutes elapsed since the town opened. */
@@ -103,6 +114,15 @@ export class Town {
   /** All residents, wherever they currently are. */
   allResidents(): Resident[] {
     return this.towers().flatMap((g) => g.residents);
+  }
+
+  /** Publish assigned staffing without running the clock, hiring, or moving people.
+   * Purchases and save restoration must be legible even while the town is paused. */
+  refreshStaffing(): void {
+    const people = this.allResidents();
+    for (const game of this.towers()) {
+      game.staffedLevels = staffedBusinessLevels(game.tower, game.id, people);
+    }
   }
 
   get population(): number {
@@ -205,6 +225,7 @@ export class Town {
     cand.jobTier += 1;
     cand.jobStartDay = this.day;
     cand.blockedDays = 0;
+    this.stories.recordPromotion(this, cand);
     this.events.push({
       kind: 'promotion',
       message: `${cand.name} was promoted to ${JOB_TIERS[floor.type][cand.jobTier].title} at ${floor.name}!`,
@@ -218,27 +239,29 @@ export class Town {
     this.events = [];
     const prevDay = this.day;
     this.time += dt;
+    this.weather.update(this.time);
 
-    // Live City Events: start/expire happenings and publish their combined
-    // effect (income multiplier now, mood bonus consumed at day rollover).
-    const { started, ended } = this.cityEvents.update(this.day);
-    for (const e of started) {
-      this.events.push({ kind: 'event', message: `${e.emoji} ${e.title} — ${e.blurb}` });
-    }
+    // Honor saved positive bonuses until expiry. New happenings come only from
+    // the contextual neighborhood invitations below, not a random director.
+    const { ended } = this.cityEvents.update(this.day);
     for (const e of ended) {
       this.events.push({ kind: 'event', message: `${e.emoji} ${e.title} has wrapped up.` });
     }
     this.economy.eventMultiplier = this.cityEvents.incomeMultiplier();
+    this.neighborhood.update(this);
 
     if (this.day !== prevDay) this.dayRollover();
 
     this.handleMoveIns(dt);
 
     const townPop = this.population;
+    const shelteredTowers = new Set(this.towers().filter((g) => g.zone === 'transit' || this.identity.unlocked.has('canopy')).map((g) => g.id));
+    this.refreshStaffing();
     for (const game of this.towers()) {
+      game.weather = this.weather.kind;
+      game.shelteredTowers = shelteredTowers;
       game.homePopulation = this.homeResidentsOf(game.id).length;
       game.townPopulation = townPop;
-      game.staffedLevels = staffedBusinessLevels(game.tower, game.id, this.allResidents());
       game.tick(dt, this.time);
       this.events.push(...game.events);
     }
@@ -261,8 +284,13 @@ export class Town {
     }
 
     assignJobs(this.contexts(), this.day);
+    this.refreshStaffing();
+    this.stories.update(this);
+    this.neighborhood.afterTrips(this);
+    this.neighborhood.discover(this);
     this.economy.accrue(dt, this.contexts());
     this.events.push(...this.missions.checkInstant(this));
+    this.events.push(...this.identity.update(this));
 
     // Append this tick's events to the rolling Activity feed (bounded).
     if (this.events.length > 0) {
@@ -281,9 +309,7 @@ export class Town {
    */
   private dayRollover(): void {
     const games = this.towers();
-    for (const game of games) {
-      game.staffedLevels = staffedBusinessLevels(game.tower, game.id, this.allResidents());
-    }
+    this.refreshStaffing();
     this.events.push(...processPromotions(this.contexts(), this.day));
     updateBusinessDay(this.contexts(), this.economy);
     this.events.push(
@@ -306,6 +332,7 @@ export class Town {
       if (!vacancy) continue;
 
       const resident = createResident(vacancy.level, game.id);
+      resident.name = distinctResidentName(resident.name, this.allResidents().map((r) => r.name));
       if (resident.state.kind === 'idle') resident.state.until = this.time;
       game.residents.push(resident);
       this.events.push({ kind: 'move-in', message: `${resident.name} moved in!` });

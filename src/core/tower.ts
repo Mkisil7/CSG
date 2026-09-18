@@ -28,11 +28,11 @@ export class Tower {
     // Business floors default to their first subtype if none was chosen.
     const resolved =
       subtype ??
-      (type === 'residential' ? undefined : BUSINESS_SUBTYPES[type]?.[0]?.subtype);
+      (type === 'residential' || type === 'landmark' ? undefined : BUSINESS_SUBTYPES[type]?.[0]?.subtype);
     const floor: Floor = {
       level: this.floors.length,
       type,
-      name: generateFloorName(type, rand),
+      name: generateFloorName(type, rand, resolved),
       subtype: resolved,
       ...emptyDayStats(),
     };
@@ -54,7 +54,7 @@ export class Tower {
   nextFloorCost(type: Exclude<FloorType, 'lobby'>, subtype?: BusinessSubtype): number {
     const built = this.floors.length - 1; // don't count the free lobby
     const subtypeMult =
-      type !== 'residential' && subtype
+      type !== 'residential' && type !== 'landmark' && subtype
         ? BUSINESS_SUBTYPES[type]?.find((p) => p.subtype === subtype)?.costMultiplier ?? 1
         : 1;
     return Math.round(

@@ -8,15 +8,14 @@ import {
   SECOND_SHAFT,
 } from '../core/types';
 import { Game } from '../core/game';
-import { IS_COARSE_POINTER } from '../render/scene';
 import { Toaster } from './hud';
 
-type BuildableType = Exclude<FloorType, 'lobby'>;
+type BuildableType = Exclude<FloorType, 'lobby' | 'landmark'>;
 
 const BUILD_ORDER: BuildableType[] = ['residential', 'shop', 'restaurant', 'office', 'factory'];
 
 /**
- * Bottom build bar. On desktop it's a flat row of buttons. On touch / narrow
+ * Bottom build bar. Desktop keeps one row of builds, Manage and View. On touch / narrow
  * screens it becomes a compact 3-button dock — [🏗 Build] [⚙ Manage] [View] —
  * that opens a tidy bottom-sheet above it (dimming the rest of the screen), so
  * the controls never overlap the game or each other. Business floor types open
@@ -32,11 +31,12 @@ export class BuildMenu {
   private activityButton: HTMLButtonElement;
   private friendsButton: HTMLButtonElement;
   private resetButton: HTMLButtonElement;
+  private landmarkButton: HTMLButtonElement;
   private popover: HTMLDivElement;
   private popoverType: JobFloorType | null = null;
 
-  // Mobile grouping.
-  private readonly mobile = IS_COARSE_POINTER;
+  // Shared action sheet; desktop groups secondary management actions only.
+  private mobile = window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
   private sheet: HTMLDivElement | null = null;
   private backdrop: HTMLDivElement | null = null;
   private buildToggle: HTMLButtonElement | null = null;
@@ -53,14 +53,25 @@ export class BuildMenu {
     onShowActivity: () => void,
     onShowSocial: () => void,
     onReset: () => void,
+    onLandmarks: () => void = () => {},
   ) {
     this.popover = document.createElement('div');
     this.popover.className = 'subtype-popover';
+    this.popover.id = 'build-subtypes';
+    this.popover.setAttribute('role', 'region');
     this.popover.style.display = 'none';
+    this.landmarkButton = document.createElement('button');
+    this.landmarkButton.className = 'build-btn';
+    this.landmarkButton.textContent = '◇ Landmarks';
+    this.landmarkButton.addEventListener('click', () => { this.closeSheet(); onLandmarks(); });
 
     for (const type of BUILD_ORDER) {
       const btn = document.createElement('button');
       btn.className = 'build-btn';
+      if (type !== 'residential') {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-controls', 'build-subtypes');
+      }
       btn.addEventListener('click', () => {
         const game = this.getGame();
         if (!game) return;
@@ -148,52 +159,100 @@ export class BuildMenu {
       if (confirm('Start over? Your whole town will be lost.')) onReset();
     });
 
+    root.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || (!this.openGroup && !this.popoverType)) return;
+      event.preventDefault(); event.stopPropagation(); this.closeSheet();
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!root.contains(event.target as Node)) this.closeSheet(false);
+    });
+    document.addEventListener('focusin', (event) => {
+      if (!root.contains(event.target as Node)) this.closeSheet(false);
+    });
     if (this.mobile) this.layoutMobile(root);
     else this.layoutDesktop(root);
+    window.matchMedia('(max-width: 900px), (pointer: coarse)').addEventListener('change', (event) => {
+      if (this.mobile === event.matches) return;
+      const hadFocus = root.contains(document.activeElement);
+      this.closeSheet();
+      this.mobile = event.matches;
+      root.replaceChildren();
+      this.sheet = null; this.backdrop = null; this.buildToggle = null; this.manageToggle = null;
+      this.viewButton.classList.remove('dock-btn');
+      if (this.mobile) this.layoutMobile(root);
+      else this.layoutDesktop(root);
+      if (hadFocus) this.viewButton.focus({ preventScroll: true });
+    });
   }
 
   // ---- layouts ---------------------------------------------------------
 
   private layoutDesktop(root: HTMLElement): void {
+    this.createSheet(root);
     root.appendChild(this.popover);
-    for (const type of BUILD_ORDER) root.appendChild(this.buttons.get(type)!);
-    root.appendChild(this.speedButton);
-    root.appendChild(this.shaftButton);
+    for (const type of BUILD_ORDER) {
+      if (type !== 'residential') this.buttons.get(type)!.setAttribute('aria-controls', this.popover.id);
+      root.appendChild(this.buttons.get(type)!);
+    }
+    root.appendChild(this.landmarkButton);
+    root.appendChild(this.manageToggle!);
     root.appendChild(this.viewButton);
-    root.appendChild(this.missionsButton);
-    root.appendChild(this.activityButton);
-    root.appendChild(this.friendsButton);
-    root.appendChild(this.resetButton);
   }
 
-  private layoutMobile(root: HTMLElement): void {
+  private createSheet(root: HTMLElement): void {
     // A dimming backdrop that closes the sheet when tapped.
-    this.backdrop = document.createElement('div');
-    this.backdrop.className = 'menu-backdrop';
-    this.backdrop.style.display = 'none';
-    this.backdrop.addEventListener('click', () => this.closeSheet());
-    root.appendChild(this.backdrop);
+    if (this.mobile) {
+      this.backdrop = document.createElement('div');
+      this.backdrop.className = 'menu-backdrop';
+      this.backdrop.style.display = 'none';
+      this.backdrop.addEventListener('click', () => this.closeSheet());
+      root.appendChild(this.backdrop);
+    }
 
     this.sheet = document.createElement('div');
-    this.sheet.className = 'build-sheet';
+    this.sheet.className = `build-sheet${this.mobile ? '' : ' desktop-manage-sheet'}`;
+    this.sheet.id = 'build-actions';
+    this.sheet.setAttribute('role', 'region');
     this.sheet.style.display = 'none';
     root.appendChild(this.sheet);
 
+    this.manageToggle = document.createElement('button');
+    this.manageToggle.className = `build-btn${this.mobile ? ' dock-btn' : ''}`;
+    this.manageToggle.textContent = '⚙ Manage';
+    this.manageToggle.setAttribute('aria-expanded', 'false');
+    this.manageToggle.setAttribute('aria-controls', this.sheet.id);
+    this.manageToggle.addEventListener('click', () => this.toggleGroup('manage'));
+  }
+
+  private layoutMobile(root: HTMLElement): void {
+    this.createSheet(root);
+    for (const [type, button] of this.buttons) if (type !== 'residential') button.setAttribute('aria-controls', this.sheet!.id);
     this.buildToggle = document.createElement('button');
     this.buildToggle.className = 'build-btn dock-btn';
     this.buildToggle.textContent = '🏗 Build';
+    this.buildToggle.setAttribute('aria-expanded', 'false');
+    this.buildToggle.setAttribute('aria-controls', this.sheet!.id);
     this.buildToggle.addEventListener('click', () => this.toggleGroup('build'));
-
-    this.manageToggle = document.createElement('button');
-    this.manageToggle.className = 'build-btn dock-btn';
-    this.manageToggle.textContent = '⚙ Manage';
-    this.manageToggle.addEventListener('click', () => this.toggleGroup('manage'));
 
     this.viewButton.classList.add('dock-btn');
 
     root.appendChild(this.buildToggle);
-    root.appendChild(this.manageToggle);
+    root.appendChild(this.manageToggle!);
     root.appendChild(this.viewButton);
+  }
+
+  /** Goal navigation only: the player still chooses and confirms a paid build. */
+  showBuildOptions(type: BuildableType): void {
+    if (!this.getGame()) return;
+    if (this.mobile) {
+      if (type === 'residential') this.populateSheet('build');
+      else this.showSubtypeSheet(type);
+    } else if (type !== 'residential') {
+      this.hidePopover();
+      this.togglePopover(type);
+    }
+    if (type === 'residential') this.buttons.get(type)?.focus();
+    else (this.mobile ? this.sheet : this.popover)?.querySelector<HTMLButtonElement>('.subtype-btn:not(:disabled)')?.focus();
   }
 
   private toggleGroup(group: 'build' | 'manage'): void {
@@ -206,11 +265,14 @@ export class BuildMenu {
 
   private populateSheet(group: 'build' | 'manage'): void {
     if (!this.sheet) return;
+    this.hidePopover(false);
     this.openGroup = group;
+    this.sheet.setAttribute('aria-label', group === 'build' ? 'Build choices' : 'Manage actions');
     this.sheet.innerHTML = '';
     this.sheet.appendChild(this.sheetHeader(group === 'build' ? 'Build' : 'Manage'));
     if (group === 'build') {
       for (const type of BUILD_ORDER) this.sheet.appendChild(this.buttons.get(type)!);
+      this.sheet.appendChild(this.landmarkButton);
     } else {
       this.sheet.appendChild(this.speedButton);
       this.sheet.appendChild(this.shaftButton);
@@ -222,6 +284,8 @@ export class BuildMenu {
     this.showSheet();
     this.buildToggle?.classList.toggle('active', group === 'build');
     this.manageToggle?.classList.toggle('active', group === 'manage');
+    this.buildToggle?.setAttribute('aria-expanded', String(group === 'build'));
+    this.manageToggle?.setAttribute('aria-expanded', String(group === 'manage'));
   }
 
   /** Mobile drill-in: replace the Build list with a subtype picker + Back. */
@@ -233,6 +297,10 @@ export class BuildMenu {
       this.toaster.show(gate.reason);
       return;
     }
+    this.openGroup = 'build';
+    this.sheet.setAttribute('aria-label', `${FLOOR_CONFIG[type].label} choices`);
+    this.buildToggle?.setAttribute('aria-expanded', 'true');
+    this.manageToggle?.setAttribute('aria-expanded', 'false');
     this.sheet.innerHTML = '';
     const back = document.createElement('button');
     back.className = 'build-btn sheet-back';
@@ -256,6 +324,11 @@ export class BuildMenu {
     const h = document.createElement('div');
     h.className = 'sheet-header';
     h.textContent = label;
+    const close = document.createElement('button');
+    close.className = 'sheet-close'; close.type = 'button'; close.textContent = '×';
+    close.setAttribute('aria-label', `Close ${label}`);
+    close.addEventListener('click', () => this.closeSheet());
+    h.appendChild(close);
     return h;
   }
 
@@ -264,22 +337,28 @@ export class BuildMenu {
     this.sheet.style.display = 'flex';
     if (this.backdrop) this.backdrop.style.display = 'block';
     document.body.classList.add('menu-sheet-open');
+    this.sheet.querySelector<HTMLButtonElement>('.build-btn:not(:disabled)')?.focus({ preventScroll: true });
   }
 
-  private closeSheet(): void {
-    this.hidePopover();
+  private closeSheet(restoreFocus = true): void {
+    const trigger = this.openGroup === 'build' ? this.buildToggle : this.manageToggle;
+    const hadSheet = this.openGroup !== null;
+    this.hidePopover(restoreFocus);
     this.openGroup = null;
     if (this.sheet) this.sheet.style.display = 'none';
     if (this.backdrop) this.backdrop.style.display = 'none';
     document.body.classList.remove('menu-sheet-open');
     this.buildToggle?.classList.remove('active');
     this.manageToggle?.classList.remove('active');
+    this.buildToggle?.setAttribute('aria-expanded', 'false');
+    this.manageToggle?.setAttribute('aria-expanded', 'false');
+    if (hadSheet && restoreFocus) trigger?.focus({ preventScroll: true });
   }
 
-  /** After a successful build: refresh state; on mobile also fold the sheet away. */
+  /** Fold choices away so a successful build/upgrade is immediately visible. */
   private afterBuild(): void {
+    this.closeSheet();
     this.onChange();
-    if (this.mobile) this.closeSheet();
   }
 
   // ---- desktop subtype popover ----------------------------------------
@@ -298,7 +377,10 @@ export class BuildMenu {
       this.toaster.show(gate.reason);
       return;
     }
+    this.closeSheet(false);
     this.popoverType = type;
+    this.buttons.get(type)?.setAttribute('aria-expanded', 'true');
+    this.popover.setAttribute('aria-label', `${FLOOR_CONFIG[type].label} choices`);
     this.popover.innerHTML = '';
     for (const profile of BUSINESS_SUBTYPES[type]) {
       const cost = game.tower.nextFloorCost(type, profile.subtype);
@@ -310,6 +392,8 @@ export class BuildMenu {
       this.popover.appendChild(btn);
     }
     this.popover.style.display = 'flex';
+    document.body.classList.add('subtype-picker-open');
+    this.popover.querySelector<HTMLButtonElement>('.subtype-btn:not(:disabled)')?.focus({ preventScroll: true });
   }
 
   private buildSubtype(type: JobFloorType, subtype: BusinessSubtype): void {
@@ -326,14 +410,20 @@ export class BuildMenu {
     }
   }
 
-  hidePopover(): void {
+  hidePopover(restoreFocus = true): void {
+    const trigger = this.popoverType ? this.buttons.get(this.popoverType) : null;
+    const hadFocus = this.popover.contains(document.activeElement);
     this.popover.style.display = 'none';
     this.popoverType = null;
+    document.body.classList.remove('subtype-picker-open');
+    trigger?.setAttribute('aria-expanded', 'false');
+    if (hadFocus && restoreFocus && trigger && !trigger.disabled) trigger.focus({ preventScroll: true });
   }
 
   update(inTowerView: boolean, completedMissions: number, totalMissions: number): void {
     const game = this.getGame();
     const disabledAll = !game || !inTowerView;
+    this.landmarkButton.disabled = disabledAll;
     if (disabledAll) this.hidePopover();
 
     for (const [type, btn] of this.buttons) {
@@ -391,6 +481,9 @@ export class BuildMenu {
       this.viewButton.textContent = inTowerView ? '🏙 Town view' : '🏢 Tower view';
     }
     this.missionsButton.innerHTML = `🎯 Missions<span class="cost">${completedMissions}/${totalMissions}</span>`;
+    if (!this.mobile && this.manageToggle) {
+      this.manageToggle.innerHTML = `⚙ Manage<span class="cost">${completedMissions}/${totalMissions} missions</span>`;
+    }
 
     // Mobile: Build needs a focused tower; Manage stays available for the
     // town-wide actions (missions, activity) even in town view.

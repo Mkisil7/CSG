@@ -1,5 +1,7 @@
 import { SaveData, toSaveData, townFromSaveData } from './save';
 import { Town } from './town';
+import { type Gift, validGift, readGiftLedger, writeGiftLedger } from './giftLedger';
+export type { Gift } from './giftLedger';
 
 /**
  * Self-contained "async multiplayer": towns and gifts are serialised into
@@ -56,7 +58,10 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array | null> {
 
 /** Encode a town into a shareable code (gzip+base64url when available). */
 export async function encodeTown(town: Town): Promise<string> {
-  const bytes = new TextEncoder().encode(JSON.stringify(toSaveData(town)));
+  const snapshot = toSaveData(town);
+  // A visit code is scenery, not the owner's private gift outbox/redemption ledger.
+  delete snapshot.gifts;
+  const bytes = new TextEncoder().encode(JSON.stringify(snapshot));
   const gz = await gzip(bytes);
   return gz ? 'g' + bytesToBase64url(gz) : 'r' + bytesToBase64url(bytes);
 }
@@ -76,15 +81,6 @@ export async function decodeTown(code: string): Promise<Town | null> {
 }
 
 // ---- gift codes ------------------------------------------------------------
-
-export interface Gift {
-  kind: 'coins';
-  amount: number;
-  /** Sender's display name, if they set one. */
-  from?: string;
-  /** One-time id so a gift can't be redeemed twice on the same device. */
-  nonce: string;
-}
 
 export function newNonce(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -110,9 +106,11 @@ export function encodeGift(gift: Gift): string {
 export function decodeGift(code: string): Gift | null {
   try {
     const s = code.trim();
+    if (s.length > 2048) return null;
     if (s[0] !== 'G') return null;
     const parts = s.slice(1).split('.');
     if (parts.length < 2 || parts.length > 3) return null;
+    if (!/^[0-9a-z]+$/i.test(parts[0])) return null;
     const amount = parseInt(parts[0], 36);
     const nonce = parts[1];
     if (!Number.isFinite(amount) || amount < 0 || !nonce) return null;
@@ -120,7 +118,8 @@ export function decodeGift(code: string): Gift | null {
       parts[2] !== undefined
         ? new TextDecoder().decode(base64urlToBytes(parts[2])) || undefined
         : undefined;
-    return { kind: 'coins', amount, from, nonce };
+    const gift: Gift = { kind: 'coins', amount, from, nonce };
+    return validGift(gift) ? gift : null;
   } catch {
     return null;
   }
@@ -134,39 +133,27 @@ export function applyGift(town: Town, gift: Gift): string {
 
 // ---- one-time redemption + player name (localStorage) ----------------------
 
-const REDEEMED_KEY = 'tower-town-gifts-redeemed';
 const NAME_KEY = 'tower-town-player-name';
 
-export function isGiftRedeemed(nonce: string, storage: Storage = localStorage): boolean {
-  try {
-    return (storage.getItem(REDEEMED_KEY) ?? '').split(',').includes(nonce);
-  } catch {
-    return false;
-  }
+export function isGiftRedeemed(nonce: string, storage?: Storage): boolean {
+  return readGiftLedger(storage)?.includes(nonce) ?? false;
 }
 
-export function markGiftRedeemed(nonce: string, storage: Storage = localStorage): void {
-  try {
-    const list = (storage.getItem(REDEEMED_KEY) ?? '').split(',').filter(Boolean);
-    if (!list.includes(nonce)) list.push(nonce);
-    // Keep the list bounded.
-    storage.setItem(REDEEMED_KEY, list.slice(-500).join(','));
-  } catch {
-    // ignore
-  }
+export function markGiftRedeemed(nonce: string, storage?: Storage): boolean {
+  const list = readGiftLedger(storage); return list !== null && writeGiftLedger([...list, nonce], storage);
 }
 
-export function getPlayerName(storage: Storage = localStorage): string {
+export function getPlayerName(storage?: Storage): string {
   try {
-    return storage.getItem(NAME_KEY) || '';
+    return (storage ?? localStorage).getItem(NAME_KEY) || '';
   } catch {
     return '';
   }
 }
 
-export function setPlayerName(name: string, storage: Storage = localStorage): void {
+export function setPlayerName(name: string, storage?: Storage): void {
   try {
-    storage.setItem(NAME_KEY, name.slice(0, 24));
+    (storage ?? localStorage).setItem(NAME_KEY, name.slice(0, 24));
   } catch {
     // ignore
   }

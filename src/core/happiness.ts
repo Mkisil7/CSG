@@ -6,6 +6,21 @@ import { averageBusinessQuality } from './business';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** One travel calculation for daily happiness and read-only explanations.
+ * Commute minutes are the normal street route, not a live weather/trip ETA. */
+export function residentTravelPressure(resident: Resident, home?: Pick<Game, 'zone' | 'averageWait'>, job?: Pick<Game, 'zone'>) {
+  const waitMinutes = home?.averageWait() ?? 0;
+  const commuteMinutes = resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId
+    ? commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId) : 0;
+  const transit = home?.zone === 'transit' || job?.zone === 'transit';
+  return {
+    waitMinutes, commuteMinutes,
+    waitPenalty: clamp((waitMinutes - HAPPINESS.comfortableWaitMinutes) * HAPPINESS.waitPenaltyPerMinute, 0, HAPPINESS.maxWaitPenalty),
+    commutePenalty: clamp((commuteMinutes - (transit ? HAPPINESS.transitComfortableCommuteMinutes : HAPPINESS.comfortableCommuteMinutes)) *
+      (transit ? HAPPINESS.transitCommutePenaltyPerMinute : HAPPINESS.commutePenaltyPerMinute), 0, HAPPINESS.maxCommutePenalty),
+  };
+}
+
 /**
  * Day-rollover happiness pass: update each resident's four needs, combine
  * with environmental penalties into a 0-100 happiness score, and evict
@@ -53,7 +68,7 @@ export function updateHappinessAndEvict(
     );
     resident.needs.entertainment = updateDecayingNeed(
       resident.needs.entertainment,
-      resident.didShop || resident.didNightlife,
+      resident.didShop || resident.didNightlife || resident.didLandmark === true,
       townHasEntertainment ? HAPPINESS.entertainmentDecayPerDay : 0,
     );
 
@@ -75,30 +90,8 @@ export function updateHappinessAndEvict(
           );
 
     // -- environment -----------------------------------------------------
-    const waitPenalty = clamp(
-      (homeGame.averageWait() - HAPPINESS.comfortableWaitMinutes) * HAPPINESS.waitPenaltyPerMinute,
-      0,
-      HAPPINESS.maxWaitPenalty,
-    );
-    const commutes = resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId;
-    // Transit-oriented zoning (home or job) softens the commute penalty: a
-    // higher comfortable threshold and a gentler per-minute slope.
     const jobGame = resident.jobTowerId ? byId.get(resident.jobTowerId) : undefined;
-    const transit = homeGame.zone === 'transit' || jobGame?.zone === 'transit';
-    const comfortableCommute = transit
-      ? HAPPINESS.transitComfortableCommuteMinutes
-      : HAPPINESS.comfortableCommuteMinutes;
-    const commuteSlope = transit
-      ? HAPPINESS.transitCommutePenaltyPerMinute
-      : HAPPINESS.commutePenaltyPerMinute;
-    const commutePenalty = commutes
-      ? clamp(
-          (commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId!) - comfortableCommute) *
-            commuteSlope,
-          0,
-          HAPPINESS.maxCommutePenalty,
-        )
-      : 0;
+    const { waitPenalty, commutePenalty } = residentTravelPressure(resident, homeGame, jobGame);
     const vibrancy = clamp(
       ((averageBusinessQuality(homeGame.tower) - 50) / 50) * HAPPINESS.vibrancyWeight,
       -HAPPINESS.vibrancyWeight,
@@ -114,7 +107,7 @@ export function updateHappinessAndEvict(
         w.entertainment * resident.needs.entertainment +
         vibrancy +
         parkBonus +
-        cityMoodBonus -
+        cityMoodBonus + homeGame.communityMood -
         waitPenalty -
         commutePenalty,
       0,
@@ -185,14 +178,14 @@ export function worstFactor(
   commutePenalty = 0,
 ): string {
   const candidates: [number, string][] = [
-    [resident.needs.housing, 'a packed apartment'],
-    [resident.needs.employment, resident.jobFloor === null ? 'no job' : 'a dead-end job'],
-    [resident.needs.food, 'nowhere good to eat'],
-    [resident.needs.entertainment, 'nothing to do'],
-    [100 - waitPenalty * 5, 'endless lift queues'],
-    [100 - commutePenalty * 5, 'a brutal commute'],
+    [(100 - resident.needs.housing) * HAPPINESS.weights.housing, 'a packed apartment'],
+    [(100 - resident.needs.employment) * HAPPINESS.weights.employment, resident.jobFloor === null ? 'no job' : 'career satisfaction'],
+    [(100 - resident.needs.food) * HAPPINESS.weights.food, 'missed meals'],
+    [(100 - resident.needs.entertainment) * HAPPINESS.weights.entertainment, 'not enough leisure'],
+    [waitPenalty, 'long lift queues'],
+    [commutePenalty, 'a long commute'],
   ];
-  candidates.sort((a, b) => a[0] - b[0]);
+  candidates.sort((a, b) => b[0] - a[0]);
   return candidates[0][1];
 }
 
@@ -254,22 +247,9 @@ export function happinessBreakdown(town: Town): HappinessBreakdown {
   for (const resident of residents) {
     const homeGame = byId.get(resident.homeTowerId);
     if (!homeGame) continue;
-    waitSum += clamp(
-      (homeGame.averageWait() - HAPPINESS.comfortableWaitMinutes) * HAPPINESS.waitPenaltyPerMinute,
-      0,
-      HAPPINESS.maxWaitPenalty,
-    );
-    const commutes =
-      resident.jobTowerId !== null && resident.jobTowerId !== resident.homeTowerId;
-    commuteSum += commutes
-      ? clamp(
-          (commuteMinutesBetween(resident.homeTowerId, resident.jobTowerId!) -
-            HAPPINESS.comfortableCommuteMinutes) *
-            HAPPINESS.commutePenaltyPerMinute,
-          0,
-          HAPPINESS.maxCommutePenalty,
-        )
-      : 0;
+    const pressure = residentTravelPressure(resident, homeGame, resident.jobTowerId ? byId.get(resident.jobTowerId) : undefined);
+    waitSum += pressure.waitPenalty;
+    commuteSum += pressure.commutePenalty;
     vibSum += clamp(
       ((averageBusinessQuality(homeGame.tower) - 50) / 50) * HAPPINESS.vibrancyWeight,
       -HAPPINESS.vibrancyWeight,
@@ -291,6 +271,6 @@ export function happinessBreakdown(town: Town): HappinessBreakdown {
       { label: 'Long commutes', value: commuteSum / n },
     ],
     vibrancy: vibSum / n,
-    cityMood: town.cityEvents.moodBonus(),
+    cityMood: town.cityEvents.moodBonus() + avg((r) => byId.get(r.homeTowerId)?.communityMood ?? 0),
   };
 }

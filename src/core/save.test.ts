@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Town } from './town';
 import { Game } from './game';
-import { saveGame, loadGame } from './save';
+import { saveGame, loadGame, readGame, clearSave, SaveSession } from './save';
 import { createResident } from './residents';
 
 function mockStorage(): Storage {
@@ -18,7 +18,45 @@ function mockStorage(): Storage {
   } as Storage;
 }
 
-describe('save/load round trip (v3)', () => {
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+describe('save/load round trip (v4)', () => {
+  it('reports a failed write without replacing the previous snapshot, then recovers', () => {
+    const town = new Town(), storage = mockStorage();
+    expect(saveGame(town, storage)).toBe(true); const old = storage.getItem('tower-town-save-v4');
+    town.economy.coins += 500;
+    const write = vi.spyOn(storage, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+    expect(saveGame(town, storage)).toBe(false); expect(storage.getItem('tower-town-save-v4')).toBe(old);
+    write.mockRestore(); expect(saveGame(town, storage)).toBe(true);
+    expect(loadGame(storage)!.town.economy.coins).toBe(town.economy.coins);
+  });
+  it('catches unavailable storage including access to the global getter itself', () => {
+    vi.stubGlobal('localStorage', undefined);
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: () => { throw new DOMException('Denied', 'SecurityError'); } });
+    expect(readGame()).toEqual({ status: 'unavailable' }); expect(loadGame()).toBeNull();
+    expect(saveGame(new Town())).toBe(false); expect(clearSave()).toBe(false);
+  });
+  it.each(['', '{bad json', '{"version":3}', '{"version":4,"time":480,"coins":300,"towers":[]}',
+    '{"version":4,"time":null,"coins":300,"towers":[]}'])('preserves invalid stored data instead of calling it an empty slot (%s)', (raw) => {
+    const storage = mockStorage(); storage.setItem('tower-town-save-v4', raw);
+    expect(readGame(storage)).toEqual({ status: 'invalid' }); expect(storage.getItem('tower-town-save-v4')).toBe(raw);
+  });
+  it('keeps protected sessions from writing or clearing even after storage recovers', () => {
+    const storage = mockStorage(), write = vi.spyOn(storage, 'setItem'), remove = vi.spyOn(storage, 'removeItem');
+    const session = new SaveSession(new Town(), false, storage);
+    expect(session.save()).toBeNull(); expect(session.reset()).toBe(false);
+    expect(write).not.toHaveBeenCalled(); expect(remove).not.toHaveBeenCalled();
+  });
+  it('prevents the unload save from resurrecting a successfully reset town', () => {
+    const storage = mockStorage(), session = new SaveSession(new Town(), true, storage);
+    expect(session.save()).toBe(true); expect(session.reset()).toBe(true);
+    expect(session.save()).toBeNull(); expect(readGame(storage)).toEqual({ status: 'empty' });
+  });
+  it('keeps a session saveable after a failed reset', () => {
+    const storage = mockStorage(), session = new SaveSession(new Town(), true, storage); session.save();
+    vi.spyOn(storage, 'removeItem').mockImplementation(() => { throw new Error('Denied'); });
+    expect(session.reset()).toBe(false); expect(session.enabled).toBe(true); expect(session.save()).toBe(true);
+  });
   it('restores towers, floors, business/career/happiness state, and missions', () => {
     const town = new Town();
     const t0 = town.slots[0].game!;
