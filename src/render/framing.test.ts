@@ -27,8 +27,8 @@ describe('responsive town and tower composition', () => {
       expect(sceneInsets(width, 720, 306).bottom).toBe(80);
       expect(sceneInsets(width, 720, 306, true).bottom).toBe(168);
     }
-    expect(sceneInsets(390, 844, 0).bottom).toBe(128);
-    expect(sceneInsets(390, 844, 0, true).bottom).toBe(216);
+    expect(sceneInsets(390, 844, 0).bottom).toBe(76);
+    expect(sceneInsets(390, 844, 0, true).bottom).toBe(164);
   });
 
   it('fits intentional room crops above the exploration controls and clamps both pan axes', () => {

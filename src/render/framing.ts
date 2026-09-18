@@ -7,12 +7,13 @@ export interface TownFrameSlot { index: number; floors: number; hosts?: number }
 
 /** Space occupied by the persistent controls, not transient inspector sheets. */
 export function sceneInsets(width: number, height: number, journalWidth: number, exploring = false): FrameInsets {
-  const landscape = height <= 550 && width > 640;
+  const compact = width <= 900;
+  const landscape = height <= 550 && width > 900;
   return {
     left: Math.min(width * 0.4, Math.max(journalWidth, landscape ? 260 : 12)),
     right: 12,
-    top: Math.min(height * 0.34, width <= 640 ? 156 : width < 1000 && !landscape ? 184 : 110),
-    bottom: Math.min(height * 0.25, width <= 640 ? 128 : 80) + (exploring ? 88 : 0),
+    top: Math.min(height * 0.34, compact ? 64 : width < 1000 && !landscape ? 184 : 110),
+    bottom: Math.min(height * 0.25, compact ? 76 : 80) + (exploring ? 88 : 0),
   };
 }
 

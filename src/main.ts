@@ -60,6 +60,7 @@ import { visualDelta } from './render/motion';
 import { RoomControls, roomCaption } from './ui/roomControls';
 import { SaveStatus, showLoadFailure } from './ui/saveStatus';
 import { loadingMessage } from './ui/loading';
+import { MobileControls } from './ui/mobileControls';
 
 const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
 const ctx = createScene(canvas);
@@ -222,6 +223,7 @@ export async function start(): Promise<void> {
   }, () => canvas.focus({ preventScroll: true }));
   const eventTicker = new EventTicker(document.getElementById('event-ticker')!, () => inspector.select({ kind: 'neighborhood' }));
   const speedControl = new SpeedControl(document.getElementById('speed-control')!);
+  const mobileControls = new MobileControls();
 
   const onChanged = () => {
     ensureBundles();
@@ -495,7 +497,8 @@ export async function start(): Promise<void> {
       updateTownCam(ctx, frameSlots());
       ctx.controls.update();
     }
-    roomControls.update(inspector.current !== null);
+    roomControls.update(inspector.current !== null || mobileControls.isOpen);
+    mobileControls.update(town, speedControl);
     renderScene(ctx);
     performanceStudy?.end(now);
     requestAnimationFrame(frame);

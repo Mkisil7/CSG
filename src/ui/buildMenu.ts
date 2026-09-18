@@ -218,7 +218,7 @@ export class BuildMenu {
 
     this.manageToggle = document.createElement('button');
     this.manageToggle.className = `build-btn${this.mobile ? ' dock-btn' : ''}`;
-    this.manageToggle.textContent = '⚙ Manage';
+    this.manageToggle.textContent = this.mobile ? 'Manage' : '⚙ Manage';
     this.manageToggle.setAttribute('aria-expanded', 'false');
     this.manageToggle.setAttribute('aria-controls', this.sheet.id);
     this.manageToggle.addEventListener('click', () => this.toggleGroup('manage'));
@@ -229,7 +229,7 @@ export class BuildMenu {
     for (const [type, button] of this.buttons) if (type !== 'residential') button.setAttribute('aria-controls', this.sheet!.id);
     this.buildToggle = document.createElement('button');
     this.buildToggle.className = 'build-btn dock-btn';
-    this.buildToggle.textContent = '🏗 Build';
+    this.buildToggle.textContent = '+ Build';
     this.buildToggle.setAttribute('aria-expanded', 'false');
     this.buildToggle.setAttribute('aria-controls', this.sheet!.id);
     this.buildToggle.addEventListener('click', () => this.toggleGroup('build'));
@@ -476,7 +476,7 @@ export class BuildMenu {
 
     // The View toggle stays short on mobile so three buttons fit one row.
     if (this.mobile) {
-      this.viewButton.textContent = inTowerView ? '🏙 Town' : '🏢 Tower';
+      this.viewButton.textContent = inTowerView ? 'Town' : 'Tower';
     } else {
       this.viewButton.textContent = inTowerView ? '🏙 Town view' : '🏢 Tower view';
     }

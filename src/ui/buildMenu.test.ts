@@ -104,10 +104,10 @@ describe('compact build dock', () => {
     const s = setup(true), coins = s.game.economy.coins;
     expect(s.root.children.filter(e => e.tagName === 'button')).toHaveLength(3);
     s.menu.showBuildOptions('office'); expect(s.sheet().getAttribute('aria-label')).toBe('Office choices');
-    expect(s.button('🏗 Build').getAttribute('aria-expanded')).toBe('true');
+    expect(s.button('+ Build').getAttribute('aria-expanded')).toBe('true');
     s.button('‹ Build').click(); expect(s.sheet().getAttribute('aria-label')).toBe('Build choices');
     expect(s.button('Office').getAttribute('aria-controls')).toBe(s.sheet().id);
-    s.escape(); expect(s.doc.activeElement).toBe(s.button('🏗 Build'));
+    s.escape(); expect(s.doc.activeElement).toBe(s.button('+ Build'));
     expect(s.game.economy.coins).toBe(coins); expect(s.changed).not.toHaveBeenCalled();
   });
 
@@ -119,8 +119,8 @@ describe('compact build dock', () => {
     s.button('⚙ Manage').click(); s.resize(true);
     expect(s.root.children.filter(e => e.tagName === 'button')).toHaveLength(3);
     expect(s.body.classList.contains('menu-sheet-open')).toBe(false);
-    expect(s.doc.activeElement).toBe(s.button('🏙 Town'));
-    s.button('⚙ Manage').click(); s.resize(false);
+    expect(s.doc.activeElement).toBe(s.button('Town'));
+    s.button('Manage').click(); s.resize(false);
     expect(s.root.children.filter(e => e.tagName === 'button')).toHaveLength(8);
     expect(s.root.all().filter(e => e.id === 'build-actions')).toHaveLength(1);
     expect(s.doc.activeElement).toBe(s.button('🏙 Town view'));
