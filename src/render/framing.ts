@@ -11,7 +11,7 @@ export function sceneInsets(width: number, height: number, journalWidth: number,
   return {
     left: Math.min(width * 0.4, Math.max(journalWidth, landscape ? 260 : 12)),
     right: 12,
-    top: Math.min(height * 0.34, width <= 640 ? 256 : width < 1000 && !landscape ? 240 : 110),
+    top: Math.min(height * 0.34, width <= 640 ? 156 : width < 1000 && !landscape ? 184 : 110),
     bottom: Math.min(height * 0.25, width <= 640 ? 128 : 80) + (exploring ? 88 : 0),
   };
 }

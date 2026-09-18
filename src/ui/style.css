@@ -166,6 +166,12 @@ button.story-row { cursor: pointer; }
 .town-journal :focus-visible, .inspector :focus-visible { outline: 2px solid #257766; outline-offset: -3px; }
 @media (max-width: 999px) {
   .town-journal { top: 132px; left: 10px; width: 244px; max-height: calc(100dvh - 235px); }
+  /* A collapsed phone journal is one tab, not a card over the tower. */
+  .town-journal[data-expanded="false"] { width: 104px; border-radius: 14px; }
+  .town-journal[data-expanded="false"] :is(.journal-spotlight, .journal-alternative, .journal-footer) { display: none; }
+  .town-journal[data-expanded="false"] .journal-toggle { width: 100%; flex: 1; min-height: 44px; flex-direction: row; gap: 10px; padding: 8px 12px; border: 0; }
+  .town-journal[data-expanded="false"] .journal-goal-count { font-size: 12px; font-weight: 600; }
+  .town-journal[data-expanded="true"] .journal-header { position: sticky; top: 0; z-index: 1; background: #fbf9f2; }
   .journal-toggle { padding: 11px 14px; }
   .journal-toggle strong { font-size: 19px; }
   .journal-open { padding: 9px 14px; }
@@ -729,7 +735,7 @@ body,
     top: 8px;
     left: 8px;
     right: 8px;
-    gap: 6px;
+    gap: 4px;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -745,11 +751,14 @@ body,
     font-size: 11px;
   }
 
-  #event-ticker { top: 106px; left: 8px; right: 8px; transform: none; max-width: none; gap: 5px; }
+  #event-ticker { top: 104px; left: 8px; right: 124px; transform: none; max-width: none; gap: 5px; }
   .weather-chip { font-size: 11px; }
-  .weather-chip summary { padding: 8px 10px; }
-  #sound-control { top: 148px; right: 8px; }
-  .town-journal { top: 150px; max-height: calc(100dvh - 285px); }
+  .weather-chip summary { padding: 8px 10px; min-height: 44px; display: flex; align-items: center; }
+  #sound-control { top: auto; bottom: 72px; right: 8px; }
+  .sound-toggle { min-height: 44px; }
+  .town-journal { top: 104px; left: 8px; right: 8px; width: auto; max-height: calc(100dvh - 238px); }
+  .town-journal[data-expanded="false"] { left: auto; }
+  .town-journal[data-expanded="true"] { z-index: 8; }
   .weather-study { top: 186px; left: auto; right: 8px; transform: none; font-size: 10px; max-width: 122px; padding: 8px; }
 
   .hud-chip small {
@@ -782,14 +791,16 @@ body,
      sheet is open. */
   #speed-control {
     top: auto;
-    bottom: 76px;
+    bottom: 72px;
     right: auto;
-    left: 50%;
-    transform: translateX(-50%);
-    gap: 6px;
+    left: 8px;
+    transform: none;
+    gap: 4px;
   }
 
-  body.menu-sheet-open #speed-control {
+  #speed-control .speed-btn { width: 44px; min-height: 44px; padding: 6px; }
+
+  body.menu-sheet-open #speed-control, body.menu-sheet-open #sound-control {
     display: none;
   }
 

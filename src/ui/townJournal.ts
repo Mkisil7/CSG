@@ -19,7 +19,7 @@ export class TownJournal {
   private targets: GoalTarget[] = [];
   private town: Town | null = null;
 
-  constructor(root: HTMLElement, private readonly onSelect: (target: GoalTarget) => void,
+  constructor(private readonly root: HTMLElement, private readonly onSelect: (target: GoalTarget) => void,
     onJournal: () => void, onSkyline: () => void, onLayout: (inset: number) => void = () => {}) {
     root.className = 'town-journal';
     root.innerHTML = `<div class="journal-header"><button type="button" class="journal-spotlight" hidden>
@@ -60,8 +60,22 @@ export class TownJournal {
       (choice ?? this.toggle).focus({ preventScroll: true });
       choice?.scrollIntoView({ block: 'nearest' });
     });
-    root.querySelector('.journal-open')!.addEventListener('click', onJournal);
-    root.querySelector('.journal-skyline')!.addEventListener('click', onSkyline);
+    const follow = (action: () => void) => {
+      if (window.matchMedia('(max-width: 999px)').matches) {
+        this.setExpanded(false);
+        this.toggle.focus({ preventScroll: true });
+      }
+      action();
+    };
+    root.querySelector('.journal-open')!.addEventListener('click', () => follow(onJournal));
+    root.querySelector('.journal-skyline')!.addEventListener('click', () => follow(onSkyline));
+    root.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !this.content.hidden) {
+        event.stopPropagation();
+        this.setExpanded(false);
+        this.toggle.focus({ preventScroll: true });
+      }
+    });
     this.content.addEventListener('click', (event) => {
       const button = (event.target as Element).closest<HTMLButtonElement>('button');
       if (!button) return;
@@ -84,6 +98,7 @@ export class TownJournal {
   }
 
   private setExpanded(expanded: boolean): void {
+    this.root.setAttribute('data-expanded', String(expanded));
     this.content.hidden = !expanded;
     this.spotlight.hidden = expanded || !this.primaryTarget;
     this.toggleLabel.hidden = !expanded && !!this.primaryTarget;
